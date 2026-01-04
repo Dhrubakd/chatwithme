@@ -7,69 +7,94 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        /* Mobile responsive styles */
-        @media (max-width: 768px) {
-            .chat-sidebar.hidden-mobile {
-                display: none !important;
-            }
-            .chat-window.hidden-mobile {
-                display: none !important;
-            }
+        /* Reset and base styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
         
         /* Full height layout */
-        body, html {
+        html, body {
             height: 100vh;
+            height: -webkit-fill-available;
             overflow: hidden;
-        }
-        
-        /* Ensure containers take full height */
-        .chat-sidebar {
-            height: 100vh !important;
-            max-height: 100vh !important;
-            min-height: 100vh !important;
             position: fixed;
-            left: 0;
-            top: 0;
             width: 100%;
         }
         
-        @media (min-width: 768px) {
-            .chat-sidebar {
-                width: 33.333333%;
-                position: relative;
-            }
-        }
-        
-        @media (min-width: 1024px) {
-            .chat-sidebar {
-                width: 25%;
-            }
-        }
-        
-        .chat-window {
+        /* Main container */
+        body > div {
             height: 100vh;
-            max-height: 100vh;
-            display: flex !important;
-            flex-direction: column !important;
+            height: -webkit-fill-available;
+            overflow: hidden;
         }
         
-        /* Chat header - fixed height */
+        /* Sidebar - Mobile first */
+        .chat-sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100vh;
+            height: -webkit-fill-available;
+            z-index: 10;
+            background: white;
+        }
+        
+        .chat-sidebar.hidden-mobile {
+            display: none !important;
+        }
+        
+        /* Chat window - Mobile first */
+        .chat-window {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100vh;
+            height: -webkit-fill-available;
+            display: flex;
+            flex-direction: column;
+            z-index: 20;
+            background: #f3f4f6;
+        }
+        
+        .chat-window.hidden-mobile {
+            display: none !important;
+        }
+        
+        /* Chat header */
         #chatHeader {
             flex-shrink: 0;
+            display: none;
         }
         
-        /* Messages container - takes remaining space */
+        #chatHeader.show {
+            display: flex !important;
+        }
+        
+        /* Messages container */
         #messagesContainer {
-            flex: 1 !important;
-            overflow-y: auto !important;
-            min-height: 0;
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            display: none;
         }
         
-        /* Message input - fixed at bottom */
+        #messagesContainer.show {
+            display: block !important;
+        }
+        
+        /* Message input */
         #messageInput {
-            flex-shrink: 0 !important;
-            position: relative;
+            flex-shrink: 0;
+            display: none;
+        }
+        
+        #messageInput.show {
+            display: block !important;
         }
         
         /* Welcome screen */
@@ -84,17 +109,37 @@
             display: none !important;
         }
         
-        /* Show/hide classes */
-        #chatHeader:not(.show) {
-            display: none !important;
+        /* Desktop styles */
+        @media (min-width: 768px) {
+            body {
+                position: static;
+            }
+            
+            .chat-sidebar {
+                position: relative;
+                width: 33.333333%;
+                z-index: auto;
+            }
+            
+            .chat-sidebar.hidden-mobile {
+                display: flex !important;
+            }
+            
+            .chat-window {
+                position: relative;
+                flex: 1;
+                z-index: auto;
+            }
+            
+            .chat-window.hidden-mobile {
+                display: flex !important;
+            }
         }
         
-        #messagesContainer:not(.show) {
-            display: none !important;
-        }
-        
-        #messageInput:not(.show) {
-            display: none !important;
+        @media (min-width: 1024px) {
+            .chat-sidebar {
+                width: 25%;
+            }
         }
         
         /* Touch-friendly tap targets */
