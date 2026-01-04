@@ -25,8 +25,26 @@
         
         /* Ensure containers take full height */
         .chat-sidebar {
-            height: 100vh;
-            max-height: 100vh;
+            height: 100vh !important;
+            max-height: 100vh !important;
+            min-height: 100vh !important;
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100%;
+        }
+        
+        @media (min-width: 768px) {
+            .chat-sidebar {
+                width: 33.333333%;
+                position: relative;
+            }
+        }
+        
+        @media (min-width: 1024px) {
+            .chat-sidebar {
+                width: 25%;
+            }
         }
         
         .chat-window {
