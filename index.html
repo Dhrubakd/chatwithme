@@ -17,12 +17,16 @@
             }
             .chat-window {
                 display: flex !important;
+                flex-direction: column !important;
             }
-            #messagesContainer {
-                flex: 1;
+            #messagesContainer:not(.hidden) {
+                display: block !important;
+                flex: 1 !important;
+                overflow-y: auto !important;
             }
-            #messageInput {
-                flex-shrink: 0;
+            #messageInput:not(.hidden) {
+                display: block !important;
+                flex-shrink: 0 !important;
             }
         }
         

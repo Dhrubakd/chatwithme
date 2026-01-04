@@ -275,14 +275,21 @@ function openChat(userId) {
     const user = allUsers[userId];
 
     document.getElementById('welcomeScreen').classList.add('hidden');
-    document.getElementById('chatHeader').classList.remove('hidden');
-    document.getElementById('messagesContainer').classList.remove('hidden');
-    document.getElementById('messageInput').classList.remove('hidden');
     
-    // Ensure elements are visible on mobile
-    document.getElementById('chatHeader').style.display = '';
-    document.getElementById('messagesContainer').style.display = '';
-    document.getElementById('messageInput').style.display = '';
+    const chatHeader = document.getElementById('chatHeader');
+    const messagesContainer = document.getElementById('messagesContainer');
+    const messageInput = document.getElementById('messageInput');
+    
+    chatHeader.classList.remove('hidden');
+    messagesContainer.classList.remove('hidden');
+    messageInput.classList.remove('hidden');
+    
+    // Force display on mobile
+    if (window.innerWidth < 768) {
+        chatHeader.style.display = 'flex';
+        messagesContainer.style.display = 'block';
+        messageInput.style.display = 'block';
+    }
 
     showChatWindow();
 
