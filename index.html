@@ -17,36 +17,65 @@
             }
         }
         
-        /* Ensure chat window is flex container */
+        /* Full height layout */
+        body, html {
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        /* Ensure containers take full height */
+        .chat-sidebar {
+            height: 100vh;
+            max-height: 100vh;
+        }
+        
         .chat-window {
-            display: flex;
-            flex-direction: column;
+            height: 100vh;
+            max-height: 100vh;
+            display: flex !important;
+            flex-direction: column !important;
         }
         
-        /* Hide elements by default until chat is opened */
-        .chat-window > div:not(#welcomeScreen) {
-            display: none;
+        /* Chat header - fixed height */
+        #chatHeader {
+            flex-shrink: 0;
         }
         
-        .chat-window > div:not(#welcomeScreen).show {
-            display: flex;
+        /* Messages container - takes remaining space */
+        #messagesContainer {
+            flex: 1 !important;
+            overflow-y: auto !important;
+            min-height: 0;
         }
         
-        #messagesContainer.show {
-            display: block !important;
-            flex: 1;
-            overflow-y: auto;
+        /* Message input - fixed at bottom */
+        #messageInput {
+            flex-shrink: 0 !important;
+            position: relative;
         }
         
-        #messageInput.show {
-            display: block !important;
-        }
-        
+        /* Welcome screen */
         #welcomeScreen {
+            flex: 1;
             display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         #welcomeScreen.hide {
+            display: none !important;
+        }
+        
+        /* Show/hide classes */
+        #chatHeader:not(.show) {
+            display: none !important;
+        }
+        
+        #messagesContainer:not(.show) {
+            display: none !important;
+        }
+        
+        #messageInput:not(.show) {
             display: none !important;
         }
         
