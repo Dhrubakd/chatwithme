@@ -278,6 +278,11 @@ function openChat(userId) {
     document.getElementById('chatHeader').classList.remove('hidden');
     document.getElementById('messagesContainer').classList.remove('hidden');
     document.getElementById('messageInput').classList.remove('hidden');
+    
+    // Ensure elements are visible on mobile
+    document.getElementById('chatHeader').style.display = '';
+    document.getElementById('messagesContainer').style.display = '';
+    document.getElementById('messageInput').style.display = '';
 
     showChatWindow();
 
