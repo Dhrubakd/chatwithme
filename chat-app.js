@@ -44,10 +44,10 @@ auth.onAuthStateChanged(user => {
         document.getElementById('chatList').innerHTML = '';
         
         // Hide chat window
-        document.getElementById('welcomeScreen').classList.remove('hidden');
-        document.getElementById('chatHeader').classList.add('hidden');
-        document.getElementById('messagesContainer').classList.add('hidden');
-        document.getElementById('messageInput').classList.add('hidden');
+        document.getElementById('welcomeScreen').classList.remove('hide');
+        document.getElementById('chatHeader').classList.remove('show');
+        document.getElementById('messagesContainer').classList.remove('show');
+        document.getElementById('messageInput').classList.remove('show');
     }
 });
 
@@ -274,22 +274,11 @@ function openChat(userId) {
     currentChatId = userId;
     const user = allUsers[userId];
 
-    document.getElementById('welcomeScreen').classList.add('hidden');
-    
-    const chatHeader = document.getElementById('chatHeader');
-    const messagesContainer = document.getElementById('messagesContainer');
-    const messageInput = document.getElementById('messageInput');
-    
-    chatHeader.classList.remove('hidden');
-    messagesContainer.classList.remove('hidden');
-    messageInput.classList.remove('hidden');
-    
-    // Force display on mobile
-    if (window.innerWidth < 768) {
-        chatHeader.style.display = 'flex';
-        messagesContainer.style.display = 'block';
-        messageInput.style.display = 'block';
-    }
+    // Hide welcome screen and show chat elements
+    document.getElementById('welcomeScreen').classList.add('hide');
+    document.getElementById('chatHeader').classList.add('show');
+    document.getElementById('messagesContainer').classList.add('show');
+    document.getElementById('messageInput').classList.add('show');
 
     showChatWindow();
 
