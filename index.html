@@ -10,10 +10,13 @@
         /* Mobile responsive styles */
         @media (max-width: 768px) {
             .chat-sidebar.hidden-mobile {
-                display: none;
+                display: none !important;
             }
             .chat-window.hidden-mobile {
-                display: none;
+                display: none !important;
+            }
+            .chat-window {
+                display: flex;
             }
         }
         

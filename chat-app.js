@@ -305,6 +305,8 @@ function showChatWindow() {
     if (window.innerWidth < 768) {
         document.getElementById('chatSidebar').classList.add('hidden-mobile');
         document.getElementById('chatWindow').classList.remove('hidden-mobile');
+        // Force display
+        document.getElementById('chatWindow').style.display = 'flex';
     }
 }
 
@@ -312,6 +314,8 @@ function showChatList() {
     if (window.innerWidth < 768) {
         document.getElementById('chatSidebar').classList.remove('hidden-mobile');
         document.getElementById('chatWindow').classList.add('hidden-mobile');
+        // Force display
+        document.getElementById('chatSidebar').style.display = 'flex';
     }
 }
 
@@ -320,6 +324,13 @@ window.addEventListener('resize', () => {
     if (window.innerWidth >= 768) {
         document.getElementById('chatSidebar').classList.remove('hidden-mobile');
         document.getElementById('chatWindow').classList.remove('hidden-mobile');
+        document.getElementById('chatSidebar').style.display = '';
+        document.getElementById('chatWindow').style.display = '';
+    } else {
+        // On mobile, show sidebar by default if no chat is open
+        if (!currentChatId) {
+            showChatList();
+        }
     }
 });
 
