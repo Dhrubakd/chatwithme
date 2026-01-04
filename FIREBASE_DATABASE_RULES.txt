@@ -1,0 +1,60 @@
+FIREBASE REALTIME DATABASE RULES
+==================================
+
+Follow these steps to fix the "Cannot load users" error:
+
+1. Go to: https://console.firebase.google.com/
+2. Select your project: "chat-app-9f4f1"
+3. Click "Realtime Database" in the left menu
+4. Click the "Rules" tab at the top
+5. Replace the existing rules with the following:
+
+---COPY THESE RULES---
+
+{
+  "rules": {
+    "users": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth.uid == $uid"
+      }
+    },
+    "chats": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "typing": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}
+
+---END RULES---
+
+6. Click "Publish" button
+7. Refresh your chat app webpage
+
+WHAT THESE RULES DO:
+--------------------
+- "auth != null" means only logged-in users can access data
+- Users can read all user profiles (to see contact list)
+- Users can only edit their own profile
+- All logged-in users can read/write chats
+- Typing indicators accessible to all logged-in users
+
+ALTERNATIVE (FOR TESTING ONLY):
+-------------------------------
+If you want completely open access for testing (NOT RECOMMENDED FOR PRODUCTION):
+
+{
+  "rules": {
+    ".read": true,
+    ".write": true
+  }
+}
+
+NOTE: The open rules above allow anyone to read/write your database.
+Only use for testing, then switch to the secure rules above.

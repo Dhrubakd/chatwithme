@@ -20,7 +20,6 @@ let currentChatId = null;
 let allUsers = {};
 let messageListeners = {};
 let typingTimeout = null;
-let selectedMembers = [];
 
 // Auth state observer
 auth.onAuthStateChanged(user => {
@@ -29,7 +28,26 @@ auth.onAuthStateChanged(user => {
         document.getElementById('authModal').classList.add('hidden');
         initializeApp();
     } else {
+        currentUser = null;
         document.getElementById('authModal').classList.remove('hidden');
+        
+        // Clear form fields on logout
+        document.getElementById('loginEmail').value = '';
+        document.getElementById('loginPassword').value = '';
+        
+        // Clean up listeners
+        if (allUsers) {
+            database.ref('users').off();
+        }
+        
+        // Reset chat list
+        document.getElementById('chatList').innerHTML = '';
+        
+        // Hide chat window
+        document.getElementById('welcomeScreen').classList.remove('hidden');
+        document.getElementById('chatHeader').classList.add('hidden');
+        document.getElementById('messagesContainer').classList.add('hidden');
+        document.getElementById('messageInput').classList.add('hidden');
     }
 });
 
@@ -109,7 +127,6 @@ async function login() {
 async function logout() {
     if (confirm('Are you sure you want to logout?')) {
         try {
-            // Update status to offline (only if database is available)
             if (currentUser) {
                 await database.ref('users/' + currentUser.uid + '/status').set('offline');
                 await database.ref('users/' + currentUser.uid + '/lastSeen').set(firebase.database.ServerValue.TIMESTAMP);
@@ -124,10 +141,8 @@ async function logout() {
 // Initialize app after login
 async function initializeApp() {
     try {
-        // Update user status to online
         await database.ref('users/' + currentUser.uid + '/status').set('online');
         
-        // Set up presence system
         const userStatusRef = database.ref('users/' + currentUser.uid + '/status');
         database.ref('.info/connected').on('value', snapshot => {
             if (snapshot.val() === true) {
@@ -136,7 +151,6 @@ async function initializeApp() {
             }
         });
 
-        // Load current user info
         const userSnapshot = await database.ref('users/' + currentUser.uid).once('value');
         const userData = userSnapshot.val();
         
@@ -145,7 +159,6 @@ async function initializeApp() {
             document.getElementById('userAvatar').src = userData.avatar;
         }
 
-        // Load all users (contacts)
         loadUsers();
     } catch (error) {
         console.error('Error initializing app:', error);
@@ -153,7 +166,7 @@ async function initializeApp() {
     }
 }
 
-// Load all users from Firebase
+// Load all users and groups from Firebase
 function loadUsers() {
     database.ref('users').on('value', snapshot => {
         allUsers = snapshot.val() || {};
@@ -161,7 +174,10 @@ function loadUsers() {
         initChatList();
     }, error => {
         console.error('Error loading users:', error);
-        alert('Cannot load users. Please check Firebase database rules.');
+        // Only show alert if user is logged in
+        if (currentUser) {
+            alert('Cannot load users. Please check Firebase database rules.');
+        }
     });
 }
 
@@ -171,10 +187,10 @@ function initChatList() {
     chatList.innerHTML = '';
 
     const userCount = Object.keys(allUsers).length;
-    console.log('Total users in database:', userCount);
+
+    console.log('Total users:', userCount);
 
     if (userCount === 0 || (userCount === 1 && allUsers[currentUser.uid])) {
-        // No other users found
         chatList.innerHTML = `
             <div class="p-8 text-center text-gray-500">
                 <i class="fas fa-users text-4xl mb-3"></i>
@@ -187,15 +203,15 @@ function initChatList() {
 
     let hasOtherUsers = false;
 
+    // Add individual users
+    // Add individual users
     Object.keys(allUsers).forEach(userId => {
-        // Don't show current user in the list
         if (userId === currentUser.uid) return;
 
         hasOtherUsers = true;
 
         const user = allUsers[userId];
         
-        // Skip if user data is invalid
         if (!user || !user.name) {
             console.warn('Invalid user data for:', userId);
             return;
@@ -207,6 +223,7 @@ function initChatList() {
 
         const isOnline = user.status === 'online';
         const statusColor = isOnline ? 'bg-green-500' : 'bg-gray-400';
+        const aboutText = user.about && user.about.trim() ? user.about : (isOnline ? '● online' : 'offline');
 
         chatItem.innerHTML = `
             <div class="relative">
@@ -219,7 +236,7 @@ function initChatList() {
                 </div>
                 <div class="flex justify-between items-center">
                     <p class="text-sm ${isOnline ? 'text-green-600' : 'text-gray-500'} truncate">
-                        ${isOnline ? '● online' : 'offline'}
+                        ${aboutText}
                     </p>
                 </div>
             </div>
@@ -241,33 +258,72 @@ function initChatList() {
 
 // Open chat with specific user
 function openChat(userId) {
-    // Remove previous message listener
     if (currentChatId && messageListeners[currentChatId]) {
-        database.ref(getChatPath(currentChatId)).off('child_added', messageListeners[currentChatId]);
+        const chatPath = getChatPath(currentChatId);
+        const listener = messageListeners[currentChatId];
+        
+        // Remove old listeners
+        if (typeof listener === 'object') {
+            database.ref(chatPath).off('child_added', listener.add);
+            database.ref(chatPath).off('child_changed', listener.change);
+        } else {
+            database.ref(chatPath).off('child_added', listener);
+        }
     }
 
     currentChatId = userId;
     const user = allUsers[userId];
 
-    // Hide welcome screen, show chat
     document.getElementById('welcomeScreen').classList.add('hidden');
     document.getElementById('chatHeader').classList.remove('hidden');
     document.getElementById('messagesContainer').classList.remove('hidden');
     document.getElementById('messageInput').classList.remove('hidden');
 
-    // Update header
+    showChatWindow();
+
     document.getElementById('chatAvatar').src = user.avatar;
     document.getElementById('chatName').textContent = user.name;
     
+    // Display about status if available
+    const aboutElement = document.getElementById('chatAbout');
+    if (user.about && user.about.trim()) {
+        aboutElement.textContent = user.about;
+        aboutElement.classList.remove('hidden');
+    } else {
+        aboutElement.classList.add('hidden');
+    }
+    
     const isOnline = user.status === 'online';
     document.getElementById('chatStatus').textContent = isOnline ? 'online' : 'offline';
-    document.getElementById('chatStatus').className = `text-xs ${isOnline ? 'text-green-500' : 'text-gray-500'}`;
+    document.getElementById('chatStatus').className = 'text-xs ' + (isOnline ? 'text-green-500' : 'text-gray-500');
 
-    // Load messages
     loadMessages(userId);
 }
 
-// Get chat path (consistent for both users)
+// Mobile navigation functions
+function showChatWindow() {
+    if (window.innerWidth < 768) {
+        document.getElementById('chatSidebar').classList.add('hidden-mobile');
+        document.getElementById('chatWindow').classList.remove('hidden-mobile');
+    }
+}
+
+function showChatList() {
+    if (window.innerWidth < 768) {
+        document.getElementById('chatSidebar').classList.remove('hidden-mobile');
+        document.getElementById('chatWindow').classList.add('hidden-mobile');
+    }
+}
+
+// Handle window resize
+window.addEventListener('resize', () => {
+    if (window.innerWidth >= 768) {
+        document.getElementById('chatSidebar').classList.remove('hidden-mobile');
+        document.getElementById('chatWindow').classList.remove('hidden-mobile');
+    }
+});
+
+// Get chat path
 function getChatPath(otherUserId) {
     const ids = [currentUser.uid, otherUserId].sort();
     return 'chats/' + ids[0] + '_' + ids[1] + '/messages';
@@ -280,60 +336,105 @@ function loadMessages(userId) {
 
     const chatPath = getChatPath(userId);
     
-    // Load existing messages first
+    // Load all existing messages
     database.ref(chatPath).orderByChild('timestamp').once('value', snapshot => {
         snapshot.forEach(childSnapshot => {
             const message = childSnapshot.val();
             const messageId = childSnapshot.key;
             
             if (message.type === 'file') {
-                addFileToUI(message, message.senderId === currentUser.uid, formatTime(message.timestamp));
+                addFileToUI(message, message.senderId === currentUser.uid, formatTime(message.timestamp), messageId, chatPath);
             } else {
                 addMessageToUI(
                     message.text,
                     message.senderId === currentUser.uid,
                     formatTime(message.timestamp),
-                    message.readBy
+                    message.readBy,
+                    messageId,
+                    chatPath
                 );
             }
             
-            // Mark as read if not sent by current user
             if (message.senderId !== currentUser.uid) {
-                markAsRead(messageId, chatPath);
+                // Mark as delivered when loading chat
+                markAsDelivered(messageId, chatPath);
+                // Mark as read only after a short delay to ensure user is viewing
+                setTimeout(() => {
+                    markAsRead(messageId, chatPath);
+                }, 500);
             }
         });
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     });
 
-    // Listen for new messages in real-time
-    const listener = database.ref(chatPath).orderByChild('timestamp').limitToLast(1).on('child_added', snapshot => {
+    // Listen for new messages
+    const addListener = database.ref(chatPath).on('child_added', snapshot => {
         const message = snapshot.val();
         const messageId = snapshot.key;
         
-        // Avoid duplicating messages from initial load
         if (message.timestamp > Date.now() - 1000) {
             if (message.type === 'file') {
-                addFileToUI(message, message.senderId === currentUser.uid, formatTime(message.timestamp));
+                addFileToUI(message, message.senderId === currentUser.uid, formatTime(message.timestamp), messageId, chatPath);
             } else {
                 addMessageToUI(
                     message.text,
                     message.senderId === currentUser.uid,
                     formatTime(message.timestamp),
-                    message.readBy
+                    message.readBy,
+                    messageId,
+                    chatPath
                 );
             }
             
-            // Mark as read if not sent by current user
             if (message.senderId !== currentUser.uid) {
-                markAsRead(messageId, chatPath);
+                // Mark as delivered when recipient receives message (but not read yet)
+                markAsDelivered(messageId, chatPath);
             }
         }
     });
 
-    messageListeners[userId] = listener;
-    
-    // Listen for typing indicator
+    // Listen for message updates (read receipts)
+    const changeListener = database.ref(chatPath).on('child_changed', snapshot => {
+        const message = snapshot.val();
+        const messageId = snapshot.key;
+        
+        // Update the message in UI if it exists
+        if (message.senderId === currentUser.uid) {
+            updateMessageReadStatus(messageId, message.readBy);
+        }
+    });
+
+    messageListeners[userId] = { add: addListener, change: changeListener };
     listenForTyping(userId);
+}
+
+// Update message read status in real-time
+function updateMessageReadStatus(messageId, readBy) {
+    const messagesContainer = document.getElementById('messagesContainer');
+    const checkIcon = messagesContainer.querySelector('[data-message-id="' + messageId + '"]');
+    
+    if (checkIcon) {
+        const readByCount = readBy ? Object.keys(readBy).length : 1;
+        const isRead = readByCount > 1;
+        const isDelivered = readByCount > 1 || (readBy && readBy.delivered);
+        
+        const recipientStatus = currentChatId && allUsers[currentChatId] ? allUsers[currentChatId].status : 'offline';
+        const recipientOnline = recipientStatus === 'online';
+        
+        // Remove all existing classes
+        checkIcon.classList.remove('fa-check', 'fa-check-double', 'text-gray-400', 'text-blue-500');
+        
+        if (isRead) {
+            // Double blue tick - message read
+            checkIcon.classList.add('fa-check-double', 'text-blue-500');
+        } else if (isDelivered || recipientOnline) {
+            // Double gray tick - delivered but not read
+            checkIcon.classList.add('fa-check-double', 'text-gray-400');
+        } else {
+            // Single gray tick - sent but not delivered
+            checkIcon.classList.add('fa-check', 'text-gray-400');
+        }
+    }
 }
 
 // Format timestamp
@@ -343,19 +444,42 @@ function formatTime(timestamp) {
 }
 
 // Add message to UI
-function addMessageToUI(text, isSent, time, readBy) {
+function addMessageToUI(text, isSent, time, readBy, messageId, chatPath) {
     const messagesContainer = document.getElementById('messagesContainer');
     const messageDiv = document.createElement('div');
-    messageDiv.className = `flex mb-4 ${isSent ? 'justify-end' : 'justify-start'}`;
+    messageDiv.className = 'flex mb-4 group ' + (isSent ? 'justify-end' : 'justify-start');
 
-    const isRead = readBy && Object.keys(readBy).length > 1; // More than just sender
+    const deleteButton = isSent && messageId ? `<button onclick="deleteMessage('${messageId}', '${chatPath}')" class="absolute -left-8 top-2 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700" title="Delete message"><i class="fas fa-trash text-sm"></i></button>` : '';
+
+    let tickMarkHtml = '';
+    if (isSent && messageId) {
+        const readByCount = readBy ? Object.keys(readBy).length : 1;
+        const isRead = readByCount > 1;
+        const isDelivered = readByCount > 1 || (readBy && readBy.delivered);
+        
+        // Check if recipient is online for delivered status
+        const recipientStatus = currentChatId && allUsers[currentChatId] ? allUsers[currentChatId].status : 'offline';
+        const recipientOnline = recipientStatus === 'online';
+        
+        if (isRead) {
+            // Double blue tick - message read
+            tickMarkHtml = `<i class="fas fa-check-double text-blue-500 text-xs" data-message-id="${messageId}"></i>`;
+        } else if (isDelivered || recipientOnline) {
+            // Double gray tick - delivered but not read
+            tickMarkHtml = `<i class="fas fa-check-double text-gray-400 text-xs" data-message-id="${messageId}"></i>`;
+        } else {
+            // Single gray tick - sent but not delivered (recipient offline)
+            tickMarkHtml = `<i class="fas fa-check text-gray-400 text-xs" data-message-id="${messageId}"></i>`;
+        }
+    }
 
     messageDiv.innerHTML = `
-        <div class="${isSent ? 'bg-green-100' : 'bg-white'} rounded-lg px-4 py-2 max-w-md shadow">
+        <div class="${isSent ? 'bg-green-100' : 'bg-white'} rounded-lg px-4 py-2 max-w-md shadow relative">
+            ${deleteButton}
             <p class="text-sm">${escapeHtml(text)}</p>
             <div class="flex items-center justify-end mt-1 space-x-1">
                 <span class="text-xs text-gray-500">${time}</span>
-                ${isSent ? `<i class="fas fa-check-double ${isRead ? 'text-blue-500' : 'text-gray-400'} text-xs"></i>` : ''}
+                ${tickMarkHtml}
             </div>
         </div>
     `;
@@ -365,25 +489,47 @@ function addMessageToUI(text, isSent, time, readBy) {
 }
 
 // Add file to UI
-function addFileToUI(fileMessage, isSent, time) {
+function addFileToUI(fileMessage, isSent, time, messageId, chatPath) {
     const messagesContainer = document.getElementById('messagesContainer');
     const messageDiv = document.createElement('div');
-    messageDiv.className = `flex mb-4 ${isSent ? 'justify-end' : 'justify-start'}`;
+    messageDiv.className = 'flex mb-4 group ' + (isSent ? 'justify-end' : 'justify-start');
 
     const isImage = fileMessage.fileType.startsWith('image/');
     
+    const deleteButton = isSent && messageId ? `<button onclick="deleteMessage('${messageId}', '${chatPath}')" class="absolute -left-8 top-2 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700" title="Delete message"><i class="fas fa-trash text-sm"></i></button>` : '';
+    
+    let fileHtml = '';
+    if (isImage) {
+        fileHtml = '<img src="' + fileMessage.fileData + '" alt="' + fileMessage.fileName + '" class="max-w-xs rounded mb-2 cursor-pointer" onclick="window.open(\'' + fileMessage.fileData + '\', \'_blank\')">';
+    } else {
+        fileHtml = '<a href="' + fileMessage.fileData + '" download="' + fileMessage.fileName + '" class="flex items-center text-blue-500 hover:text-blue-700"><i class="fas fa-file mr-2"></i><span class="text-sm">' + fileMessage.fileName + '</span></a>';
+    }
+    
+    let tickMarkHtml = '';
+    if (isSent && messageId) {
+        const readByCount = fileMessage.readBy ? Object.keys(fileMessage.readBy).length : 1;
+        const isRead = readByCount > 1;
+        const isDelivered = readByCount > 1 || (fileMessage.readBy && fileMessage.readBy.delivered);
+        
+        const recipientStatus = currentChatId && allUsers[currentChatId] ? allUsers[currentChatId].status : 'offline';
+        const recipientOnline = recipientStatus === 'online';
+        
+        if (isRead) {
+            tickMarkHtml = `<i class="fas fa-check-double text-blue-500 text-xs" data-message-id="${messageId}"></i>`;
+        } else if (isDelivered || recipientOnline) {
+            tickMarkHtml = `<i class="fas fa-check-double text-gray-400 text-xs" data-message-id="${messageId}"></i>`;
+        } else {
+            tickMarkHtml = `<i class="fas fa-check text-gray-400 text-xs" data-message-id="${messageId}"></i>`;
+        }
+    }
+    
     messageDiv.innerHTML = `
-        <div class="${isSent ? 'bg-green-100' : 'bg-white'} rounded-lg px-4 py-2 max-w-md shadow">
-            ${isImage ? 
-                `<img src="${fileMessage.fileData}" alt="${fileMessage.fileName}" class="max-w-xs rounded mb-2 cursor-pointer" onclick="window.open('${fileMessage.fileData}', '_blank')">` :
-                `<a href="${fileMessage.fileData}" download="${fileMessage.fileName}" class="flex items-center text-blue-500 hover:text-blue-700">
-                    <i class="fas fa-file mr-2"></i>
-                    <span class="text-sm">${fileMessage.fileName}</span>
-                </a>`
-            }
+        <div class="${isSent ? 'bg-green-100' : 'bg-white'} rounded-lg px-4 py-2 max-w-md shadow relative">
+            ${deleteButton}
+            ${fileHtml}
             <div class="flex items-center justify-end mt-1 space-x-1">
                 <span class="text-xs text-gray-500">${time}</span>
-                ${isSent ? '<i class="fas fa-check-double text-blue-500 text-xs"></i>' : ''}
+                ${tickMarkHtml}
             </div>
         </div>
     `;
@@ -392,7 +538,7 @@ function addFileToUI(fileMessage, isSent, time) {
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
-// Escape HTML to prevent XSS
+// Escape HTML
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -405,21 +551,20 @@ async function sendMessage() {
     const text = messageText.value.trim();
 
     if (text && currentChatId) {
-        const chatPath = getChatPath(currentChatId);
         const timestamp = Date.now();
-
-        // Save message to Firebase
+        const chatPath = getChatPath(currentChatId);
+        
+        const readByObj = {};
+        readByObj[currentUser.uid] = true;
+        
         await database.ref(chatPath).push({
             text: text,
             senderId: currentUser.uid,
             senderName: currentUser.displayName,
-            timestamp: timestamp
+            timestamp: timestamp,
+            readBy: readByObj
         });
 
-        // Clear input
-        messageText.value = '';
-
-        // Update last message in chat metadata
         const ids = [currentUser.uid, currentChatId].sort();
         const chatMetaPath = 'chats/' + ids[0] + '_' + ids[1] + '/metadata';
         await database.ref(chatMetaPath).set({
@@ -427,6 +572,8 @@ async function sendMessage() {
             lastMessageTime: timestamp,
             lastSender: currentUser.uid
         });
+
+        messageText.value = '';
     }
 }
 
@@ -437,8 +584,8 @@ document.getElementById('searchInput').addEventListener('input', function(e) {
     const chatItems = chatList.children;
 
     Array.from(chatItems).forEach(item => {
-        const name = item.querySelector('h4')?.textContent.toLowerCase();
-        if (name && name.includes(searchTerm)) {
+        const name = item.querySelector('h4');
+        if (name && name.textContent.toLowerCase().includes(searchTerm)) {
             item.style.display = 'flex';
         } else {
             item.style.display = 'none';
@@ -456,7 +603,7 @@ document.getElementById('messageText').addEventListener('keypress', function(e) 
     }
 });
 
-// Upload avatar/profile picture
+// Upload avatar
 async function uploadAvatar(event) {
     const file = event.target.files[0];
     if (!file || !currentUser) return;
@@ -466,7 +613,6 @@ async function uploadAvatar(event) {
         const avatarData = e.target.result;
         
         try {
-            // Save to database
             await database.ref('users/' + currentUser.uid + '/avatar').set(avatarData);
             document.getElementById('userAvatar').src = avatarData;
             alert('Profile picture updated!');
@@ -477,7 +623,7 @@ async function uploadAvatar(event) {
     reader.readAsDataURL(file);
 }
 
-// Upload file/image in chat
+// Upload file
 async function uploadFile(event) {
     const file = event.target.files[0];
     if (!file || !currentChatId) return;
@@ -485,10 +631,14 @@ async function uploadFile(event) {
     const reader = new FileReader();
     reader.onload = async function(e) {
         const fileData = e.target.result;
-        const chatPath = getChatPath(currentChatId);
         const timestamp = Date.now();
 
         try {
+            const chatPath = getChatPath(currentChatId);
+            
+            const readByObj = {};
+            readByObj[currentUser.uid] = true;
+            
             await database.ref(chatPath).push({
                 type: 'file',
                 fileData: fileData,
@@ -496,7 +646,8 @@ async function uploadFile(event) {
                 fileType: file.type,
                 senderId: currentUser.uid,
                 senderName: currentUser.displayName,
-                timestamp: timestamp
+                timestamp: timestamp,
+                readBy: readByObj
             });
         } catch (error) {
             alert('Failed to send file: ' + error.message);
@@ -511,13 +662,10 @@ function handleTyping() {
 
     const typingPath = 'typing/' + getChatPath(currentChatId).replace(/\//g, '_') + '/' + currentUser.uid;
     
-    // Set typing status
     database.ref(typingPath).set(true);
 
-    // Clear previous timeout
     if (typingTimeout) clearTimeout(typingTimeout);
 
-    // Remove typing status after 2 seconds
     typingTimeout = setTimeout(() => {
         database.ref(typingPath).set(false);
     }, 2000);
@@ -539,6 +687,15 @@ function listenForTyping(userId) {
     });
 }
 
+// Mark message as delivered
+async function markAsDelivered(messageId, chatPath) {
+    try {
+        await database.ref(chatPath + '/' + messageId + '/readBy/delivered').set(true);
+    } catch (error) {
+        console.log('Failed to mark as delivered:', error);
+    }
+}
+
 // Mark message as read
 async function markAsRead(messageId, chatPath) {
     try {
@@ -548,85 +705,354 @@ async function markAsRead(messageId, chatPath) {
     }
 }
 
-// Show create group modal
-function showCreateGroupModal() {
-    document.getElementById('groupModal').classList.remove('hidden');
-    loadMembersForGroup();
+// Delete message
+async function deleteMessage(messageId, chatPath) {
+    if (confirm('Delete this message?')) {
+        try {
+            await database.ref(chatPath + '/' + messageId).remove();
+            
+            // Reload messages to update UI
+            const messagesContainer = document.getElementById('messagesContainer');
+            const scrollPos = messagesContainer.scrollTop;
+            
+            loadMessages(currentChatId);
+            
+            // Restore scroll position
+            setTimeout(() => {
+                messagesContainer.scrollTop = scrollPos;
+            }, 100);
+        } catch (error) {
+            alert('Failed to delete message: ' + error.message);
+        }
+    }
 }
 
-// Close group modal
-function closeGroupModal() {
-    document.getElementById('groupModal').classList.add('hidden');
-    selectedMembers = [];
+// Toggle chat menu dropdown
+function toggleChatMenu() {
+    const menu = document.getElementById('chatMenu');
+    menu.classList.toggle('hidden');
 }
 
-// Load members for group creation
-function loadMembersForGroup() {
-    const membersList = document.getElementById('membersList');
-    membersList.innerHTML = '';
+// Close chat menu when clicking outside
+document.addEventListener('click', function(event) {
+    const menu = document.getElementById('chatMenu');
+    const button = event.target.closest('button');
+    
+    if (!menu.contains(event.target) && button && !button.onclick.toString().includes('toggleChatMenu')) {
+        menu.classList.add('hidden');
+    }
+});
 
-    Object.keys(allUsers).forEach(userId => {
-        if (userId === currentUser.uid) return;
+// Delete all messages in current chat
+async function deleteAllMessages() {
+    if (!currentChatId) {
+        alert('No chat selected');
+        return;
+    }
 
-        const user = allUsers[userId];
-        const memberDiv = document.createElement('div');
-        memberDiv.className = 'flex items-center p-2 hover:bg-gray-100 rounded cursor-pointer';
-        memberDiv.onclick = () => toggleMember(userId, memberDiv);
+    const chatName = document.getElementById('chatName').textContent;
+    if (confirm(`Delete all messages in chat with ${chatName}? This cannot be undone.`)) {
+        try {
+            const chatPath = getChatPath(currentChatId);
+            await database.ref(chatPath).remove();
+            
+            // Clear messages container
+            document.getElementById('messagesContainer').innerHTML = '<div class="text-center text-gray-500 mt-8"><i class="fas fa-inbox text-4xl mb-2"></i><p>All messages deleted</p></div>';
+            
+            // Close menu
+            document.getElementById('chatMenu').classList.add('hidden');
+            
+            alert('All messages deleted successfully');
+        } catch (error) {
+            alert('Failed to delete messages: ' + error.message);
+        }
+    }
+}
 
-        memberDiv.innerHTML = `
-            <input type="checkbox" id="member_${userId}" class="mr-3">
-            <img src="${user.avatar}" alt="${user.name}" class="w-8 h-8 rounded-full mr-2">
-            <span>${user.name}</span>
-        `;
+// Toggle chat search bar
+function toggleChatSearch() {
+    const searchBar = document.getElementById('chatSearchBar');
+    const searchInput = document.getElementById('chatSearchInput');
+    const menu = document.getElementById('chatMenu');
+    
+    searchBar.classList.toggle('hidden');
+    menu.classList.add('hidden');
+    
+    if (!searchBar.classList.contains('hidden')) {
+        searchInput.focus();
+        searchInput.value = '';
+        document.getElementById('searchResults').classList.add('hidden');
+        clearSearchHighlights();
+    } else {
+        clearSearchHighlights();
+    }
+}
 
-        membersList.appendChild(memberDiv);
+// Search in current chat
+function searchInChat() {
+    const searchTerm = document.getElementById('chatSearchInput').value.trim().toLowerCase();
+    const messagesContainer = document.getElementById('messagesContainer');
+    const messages = messagesContainer.querySelectorAll('.flex.mb-4');
+    const searchResults = document.getElementById('searchResults');
+    
+    clearSearchHighlights();
+    
+    if (!searchTerm) {
+        searchResults.classList.add('hidden');
+        return;
+    }
+    
+    let matchCount = 0;
+    
+    messages.forEach(messageDiv => {
+        const textElement = messageDiv.querySelector('p.text-sm');
+        if (textElement) {
+            const messageText = textElement.textContent.toLowerCase();
+            
+            if (messageText.includes(searchTerm)) {
+                matchCount++;
+                messageDiv.classList.add('search-highlight');
+                messageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    });
+    
+    if (matchCount > 0) {
+        searchResults.textContent = `${matchCount} message${matchCount > 1 ? 's' : ''} found`;
+        searchResults.classList.remove('hidden');
+    } else {
+        searchResults.textContent = 'No messages found';
+        searchResults.classList.remove('hidden');
+    }
+}
+
+// Clear search highlights
+function clearSearchHighlights() {
+    const highlightedMessages = document.querySelectorAll('.search-highlight');
+    highlightedMessages.forEach(msg => {
+        msg.classList.remove('search-highlight');
     });
 }
 
-// Toggle member selection
-function toggleMember(userId, element) {
-    const checkbox = element.querySelector('input[type="checkbox"]');
-    checkbox.checked = !checkbox.checked;
+// Settings Functions
 
-    if (checkbox.checked) {
-        selectedMembers.push(userId);
-        element.classList.add('bg-green-50');
-    } else {
-        selectedMembers = selectedMembers.filter(id => id !== userId);
-        element.classList.remove('bg-green-50');
-    }
+// Open settings modal
+function openSettings() {
+    document.getElementById('settingsModal').classList.remove('hidden');
+    loadSettingsData();
 }
 
-// Create group chat
-async function createGroup() {
-    const groupName = document.getElementById('groupName').value.trim();
+// Close settings modal
+function closeSettings() {
+    document.getElementById('settingsModal').classList.add('hidden');
+}
 
-    if (!groupName) {
-        alert('Please enter a group name');
-        return;
-    }
-
-    if (selectedMembers.length === 0) {
-        alert('Please select at least one member');
-        return;
-    }
-
+// Load current user data into settings
+async function loadSettingsData() {
+    if (!currentUser) return;
+    
     try {
-        const groupId = 'group_' + Date.now();
-        const members = [currentUser.uid, ...selectedMembers];
-
-        await database.ref('groups/' + groupId).set({
-            name: groupName,
-            members: members,
-            createdBy: currentUser.uid,
-            createdAt: firebase.database.ServerValue.TIMESTAMP,
-            avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(groupName)}&background=random`
-        });
-
-        closeGroupModal();
-        alert('Group created successfully!');
-        loadUsers(); // Reload to show group
+        const userSnapshot = await database.ref('users/' + currentUser.uid).once('value');
+        const userData = userSnapshot.val();
+        
+        if (userData) {
+            document.getElementById('settingsAvatar').src = userData.avatar || currentUser.photoURL;
+            document.getElementById('settingsName').value = userData.name || currentUser.displayName;
+            document.getElementById('settingsEmail').value = userData.email || currentUser.email;
+            document.getElementById('settingsAbout').value = userData.about || '';
+            updateAboutCharCount();
+            
+            // Account info
+            if (currentUser.metadata.creationTime) {
+                const createdDate = new Date(currentUser.metadata.creationTime);
+                document.getElementById('accountCreated').textContent = createdDate.toLocaleDateString();
+            }
+            
+            if (userData.lastSeen) {
+                const lastSeen = new Date(userData.lastSeen);
+                document.getElementById('lastSeenTime').textContent = lastSeen.toLocaleString();
+            }
+        }
     } catch (error) {
-        alert('Failed to create group: ' + error.message);
+        console.error('Error loading settings:', error);
     }
 }
+
+// Update display name
+async function updateDisplayName() {
+    const newName = document.getElementById('settingsName').value.trim();
+    
+    if (!newName) {
+        throw new Error('Please enter a name');
+    }
+    
+    if (newName.length < 2) {
+        throw new Error('Name must be at least 2 characters');
+    }
+    
+    // Update Firebase Auth profile
+    await currentUser.updateProfile({ displayName: newName });
+    
+    // Update database
+    await database.ref('users/' + currentUser.uid + '/name').set(newName);
+    
+    // Update UI
+    document.getElementById('userName').textContent = newName;
+}
+
+// Update profile photo from settings
+async function updateProfilePhoto(event) {
+    const file = event.target.files[0];
+    if (!file || !currentUser) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+        alert('Image size should be less than 5MB');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        const avatarData = e.target.result;
+        
+        try {
+            await database.ref('users/' + currentUser.uid + '/avatar').set(avatarData);
+            
+            // Update all avatar displays
+            document.getElementById('userAvatar').src = avatarData;
+            document.getElementById('settingsAvatar').src = avatarData;
+            
+            // Reload users to update chat list
+            loadUsers();
+            
+            alert('Profile picture updated successfully!');
+        } catch (error) {
+            alert('Failed to upload: ' + error.message);
+        }
+    };
+    reader.readAsDataURL(file);
+}
+
+// Update about/status
+async function updateAbout() {
+    const about = document.getElementById('settingsAbout').value.trim();
+    
+    if (about.length > 139) {
+        throw new Error('About must be 139 characters or less');
+    }
+    
+    await database.ref('users/' + currentUser.uid + '/about').set(about);
+}
+
+// Save all settings at once
+async function saveAllSettings() {
+    try {
+        // Show loading state
+        const btn = event.target;
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving...';
+        
+        // Update name
+        await updateDisplayName();
+        
+        // Update about
+        await updateAbout();
+        
+        // Reload users to update UI everywhere
+        loadUsers();
+        
+        // Success feedback
+        btn.innerHTML = '<i class="fas fa-check mr-2"></i>Saved!';
+        btn.classList.remove('bg-green-500', 'hover:bg-green-600');
+        btn.classList.add('bg-green-600');
+        
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+            btn.classList.add('bg-green-500', 'hover:bg-green-600');
+            btn.classList.remove('bg-green-600');
+        }, 2000);
+        
+    } catch (error) {
+        alert('Failed to save settings: ' + error.message);
+        const btn = event.target;
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-floppy-disk mr-2"></i>Save Changes';
+    }
+}
+
+// Update about character count
+function updateAboutCharCount() {
+    const aboutInput = document.getElementById('settingsAbout');
+    const charCount = document.getElementById('aboutCharCount');
+    
+    if (aboutInput && charCount) {
+        charCount.textContent = aboutInput.value.length + '/139 characters';
+    }
+}
+
+// Toggle notifications
+function toggleNotifications() {
+    const isEnabled = document.getElementById('notificationsToggle').checked;
+    
+    if (isEnabled) {
+        if ('Notification' in window) {
+            Notification.requestPermission().then(permission => {
+                if (permission === 'granted') {
+                    localStorage.setItem('notificationsEnabled', 'true');
+                    alert('Notifications enabled!');
+                } else {
+                    document.getElementById('notificationsToggle').checked = false;
+                    alert('Please allow notifications in your browser settings');
+                }
+            });
+        } else {
+            document.getElementById('notificationsToggle').checked = false;
+            alert('Notifications are not supported in this browser');
+        }
+    } else {
+        localStorage.setItem('notificationsEnabled', 'false');
+        alert('Notifications disabled');
+    }
+}
+
+// Delete account
+async function deleteAccount() {
+    const confirmation = prompt('This will permanently delete your account and all data. Type DELETE to confirm:');
+    
+    if (confirmation !== 'DELETE') {
+        alert('Account deletion cancelled');
+        return;
+    }
+    
+    try {
+        // Delete user data from database
+        await database.ref('users/' + currentUser.uid).remove();
+        
+        // Delete all chats involving this user
+        const chatsSnapshot = await database.ref('chats').once('value');
+        const chats = chatsSnapshot.val() || {};
+        
+        for (let chatId in chats) {
+            if (chatId.includes(currentUser.uid)) {
+                await database.ref('chats/' + chatId).remove();
+            }
+        }
+        
+        // Delete Firebase Auth account
+        await currentUser.delete();
+        
+        alert('Account deleted successfully');
+        closeSettings();
+    } catch (error) {
+        alert('Failed to delete account: ' + error.message + '. You may need to re-login and try again.');
+    }
+}
+
+// Add event listener for about character count
+document.addEventListener('DOMContentLoaded', function() {
+    const aboutInput = document.getElementById('settingsAbout');
+    if (aboutInput) {
+        aboutInput.addEventListener('input', updateAboutCharCount);
+    }
+});
