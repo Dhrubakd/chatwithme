@@ -358,7 +358,7 @@ function initChatList() {
         const displayName = user?.name || contact.name;
         const isOnline = user?.status === 'online';
         const statusColor = isOnline ? 'bg-green-500' : 'bg-gray-400';
-        const aboutText = (user?.about && user.about.trim()) ? user.about : (isOnline ? '● online' : 'offline');
+        const statusText = isOnline ? 'online' : 'offline';
 
         chatItem.innerHTML = `
             <div class="relative cursor-pointer" onclick="openChat('${userId}')">
@@ -371,7 +371,7 @@ function initChatList() {
                 </div>
                 <div class="flex justify-between items-center">
                     <p class="text-sm ${isOnline ? 'text-green-600' : 'text-gray-500'} truncate">
-                        ${aboutText}
+                        ${statusText}
                     </p>
                 </div>
             </div>
