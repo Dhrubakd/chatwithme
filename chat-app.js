@@ -507,9 +507,8 @@ function loadMessages(userId) {
                 );
             }
             
-            if (message.senderId !== currentUser.uid) {
-                // Mark as delivered when loading chat
-                markAsDelivered(messageId, chatPath);
+            // Only mark as read if message is from the other user and hasn't been read yet
+            if (message.senderId !== currentUser.uid && message.readBy && !message.readBy[currentUser.uid]) {
                 // Mark as read only after a short delay to ensure user is viewing
                 setTimeout(() => {
                     markAsRead(messageId, chatPath);
@@ -538,9 +537,11 @@ function loadMessages(userId) {
                 );
             }
             
+            // Mark as read if it's from the other user and chat is open
             if (message.senderId !== currentUser.uid) {
-                // Mark as delivered when recipient receives message (but not read yet)
-                markAsDelivered(messageId, chatPath);
+                setTimeout(() => {
+                    markAsRead(messageId, chatPath);
+                }, 500);
             }
         }
     });
