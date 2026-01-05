@@ -58,15 +58,16 @@
             flex-direction: column;
             z-index: 20;
             background: #f3f4f6;
+            overflow: hidden;
         }
         
         .chat-window.hidden-mobile {
             display: none !important;
         }
         
-        /* Chat header - Fixed at top */
+        /* Chat header - Absolute within chat window */
         #chatHeader {
-            position: fixed;
+            position: absolute;
             top: 0;
             left: 0;
             right: 0;
@@ -81,22 +82,24 @@
         
         /* Messages container - Account for fixed header and input */
         #messagesContainer {
-            flex: 1;
+            position: absolute;
+            top: 60px;
+            bottom: 60px;
+            left: 0;
+            right: 0;
             overflow-y: auto;
             overflow-x: hidden;
             -webkit-overflow-scrolling: touch;
             display: none;
-            padding-top: 60px;
-            padding-bottom: 60px;
         }
         
         #messagesContainer.show {
             display: block !important;
         }
         
-        /* Message input - Fixed at bottom */
+        /* Message input - Absolute at bottom of chat window */
         #messageInput {
-            position: fixed;
+            position: absolute;
             bottom: 0;
             left: 0;
             right: 0;
