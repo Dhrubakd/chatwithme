@@ -410,6 +410,9 @@ function openChat(userId) {
         if (typeof listener === 'object') {
             database.ref(chatPath).off('child_added', listener.add);
             database.ref(chatPath).off('child_changed', listener.change);
+            if (listener.status) {
+                database.ref('users/' + currentChatId + '/status').off('value', listener.status);
+            }
         } else {
             database.ref(chatPath).off('child_added', listener);
         }
@@ -429,15 +432,7 @@ function openChat(userId) {
     document.getElementById('chatAvatar').src = user.avatar;
     document.getElementById('chatName').textContent = user.name;
     
-    // Display about status if available
-    const aboutElement = document.getElementById('chatAbout');
-    if (user.about && user.about.trim()) {
-        aboutElement.textContent = user.about;
-        aboutElement.classList.remove('hidden');
-    } else {
-        aboutElement.classList.add('hidden');
-    }
-    
+    // Only show online/offline status in chat header
     const isOnline = user.status === 'online';
     document.getElementById('chatStatus').textContent = isOnline ? 'online' : 'offline';
     document.getElementById('chatStatus').className = 'text-xs ' + (isOnline ? 'text-green-500' : 'text-gray-500');
@@ -509,10 +504,8 @@ function loadMessages(userId) {
             
             // Only mark as read if message is from the other user and hasn't been read yet
             if (message.senderId !== currentUser.uid && message.readBy && !message.readBy[currentUser.uid]) {
-                // Mark as read only after a short delay to ensure user is viewing
-                setTimeout(() => {
-                    markAsRead(messageId, chatPath);
-                }, 500);
+                // Mark as read instantly
+                markAsRead(messageId, chatPath);
             }
         });
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -537,11 +530,9 @@ function loadMessages(userId) {
                 );
             }
             
-            // Mark as read if it's from the other user and chat is open
-            if (message.senderId !== currentUser.uid) {
-                setTimeout(() => {
-                    markAsRead(messageId, chatPath);
-                }, 500);
+            // Only mark as read if it's from the other user AND this chat is currently open
+            if (message.senderId !== currentUser.uid && currentChatId === message.senderId) {
+                markAsRead(messageId, chatPath);
             }
         }
     });
@@ -557,7 +548,43 @@ function loadMessages(userId) {
         }
     });
 
-    messageListeners[userId] = { add: addListener, change: changeListener };
+    // Listen for recipient status changes to update tick marks in real-time
+    const statusListener = database.ref('users/' + userId + '/status').on('value', snapshot => {
+        const recipientStatus = snapshot.val();
+        
+        // Update allUsers cache with latest status
+        if (allUsers[userId]) {
+            allUsers[userId].status = recipientStatus;
+        }
+        
+        // Update chat header status if this is the current chat
+        if (currentChatId === userId) {
+            const isOnline = recipientStatus === 'online';
+            const chatStatusElement = document.getElementById('chatStatus');
+            if (chatStatusElement) {
+                chatStatusElement.textContent = isOnline ? 'online' : 'offline';
+                chatStatusElement.className = 'text-xs ' + (isOnline ? 'text-green-500' : 'text-gray-500');
+            }
+        }
+        
+        // Update all message tick marks for messages sent by current user
+        const messagesContainer = document.getElementById('messagesContainer');
+        if (messagesContainer) {
+            messagesContainer.querySelectorAll('[data-message-id]').forEach(checkIcon => {
+                const messageId = checkIcon.getAttribute('data-message-id');
+                
+                // Get message data to check readBy status
+                database.ref(chatPath + '/' + messageId).once('value', msgSnapshot => {
+                    const message = msgSnapshot.val();
+                    if (message && message.senderId === currentUser.uid) {
+                        updateMessageReadStatus(messageId, message.readBy);
+                    }
+                });
+            });
+        }
+    });
+
+    messageListeners[userId] = { add: addListener, change: changeListener, status: statusListener };
     listenForTyping(userId);
 }
 
@@ -566,27 +593,29 @@ function updateMessageReadStatus(messageId, readBy) {
     const messagesContainer = document.getElementById('messagesContainer');
     const checkIcon = messagesContainer.querySelector('[data-message-id="' + messageId + '"]');
     
-    if (checkIcon) {
-        const readByCount = readBy ? Object.keys(readBy).length : 1;
-        const isRead = readByCount > 1;
-        const isDelivered = readByCount > 1 || (readBy && readBy.delivered);
-        
-        const recipientStatus = currentChatId && allUsers[currentChatId] ? allUsers[currentChatId].status : 'offline';
-        const recipientOnline = recipientStatus === 'online';
-        
-        // Remove all existing classes
-        checkIcon.classList.remove('fa-check', 'fa-check-double', 'text-gray-400', 'text-blue-500');
-        
-        if (isRead) {
-            // Double blue tick - message read
-            checkIcon.classList.add('fa-check-double', 'text-blue-500');
-        } else if (isDelivered || recipientOnline) {
-            // Double gray tick - delivered but not read
-            checkIcon.classList.add('fa-check-double', 'text-gray-400');
-        } else {
-            // Single gray tick - sent but not delivered
-            checkIcon.classList.add('fa-check', 'text-gray-400');
-        }
+    if (!checkIcon || !currentChatId) return;
+    
+    // Check if recipient has read the message
+    // readBy format: { senderUID: true, recipientUID: true (only if message was opened/read) }
+    const recipientHasRead = readBy && readBy[currentChatId] === true;
+    
+    // Check recipient's current online status
+    const recipientStatus = allUsers[currentChatId] ? allUsers[currentChatId].status : 'offline';
+    const recipientIsOnline = recipientStatus === 'online';
+    
+    // Remove all existing tick classes
+    checkIcon.classList.remove('fa-check', 'fa-check-double', 'text-gray-400', 'text-blue-500');
+    
+    // Priority: Read status > Online status
+    if (recipientHasRead) {
+        // Message was read - DOUBLE BLUE TICK
+        checkIcon.classList.add('fa-check-double', 'text-blue-500');
+    } else if (recipientIsOnline) {
+        // Recipient is online but hasn't read - DOUBLE GRAY TICK
+        checkIcon.classList.add('fa-check-double', 'text-gray-400');
+    } else {
+        // Recipient is offline and hasn't read - SINGLE GRAY TICK
+        checkIcon.classList.add('fa-check', 'text-gray-400');
     }
 }
 
@@ -605,23 +634,22 @@ function addMessageToUI(text, isSent, time, readBy, messageId, chatPath) {
     const deleteButton = isSent && messageId ? `<button onclick="deleteMessage('${messageId}', '${chatPath}')" class="absolute -left-8 top-2 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700" title="Delete message"><i class="fas fa-trash text-sm"></i></button>` : '';
 
     let tickMarkHtml = '';
-    if (isSent && messageId) {
-        const readByCount = readBy ? Object.keys(readBy).length : 1;
-        const isRead = readByCount > 1;
-        const isDelivered = readByCount > 1 || (readBy && readBy.delivered);
+    if (isSent && messageId && currentChatId) {
+        // Check if recipient has read the message
+        const recipientHasRead = readBy && readBy[currentChatId] === true;
         
-        // Check if recipient is online for delivered status
-        const recipientStatus = currentChatId && allUsers[currentChatId] ? allUsers[currentChatId].status : 'offline';
-        const recipientOnline = recipientStatus === 'online';
+        // Check recipient's current online status
+        const recipientStatus = allUsers[currentChatId] ? allUsers[currentChatId].status : 'offline';
+        const recipientIsOnline = recipientStatus === 'online';
         
-        if (isRead) {
-            // Double blue tick - message read
+        if (recipientHasRead) {
+            // Message was read - DOUBLE BLUE TICK
             tickMarkHtml = `<i class="fas fa-check-double text-blue-500 text-xs" data-message-id="${messageId}"></i>`;
-        } else if (isDelivered || recipientOnline) {
-            // Double gray tick - delivered but not read
+        } else if (recipientIsOnline) {
+            // Recipient online but not read - DOUBLE GRAY TICK
             tickMarkHtml = `<i class="fas fa-check-double text-gray-400 text-xs" data-message-id="${messageId}"></i>`;
         } else {
-            // Single gray tick - sent but not delivered (recipient offline)
+            // Recipient offline - SINGLE GRAY TICK
             tickMarkHtml = `<i class="fas fa-check text-gray-400 text-xs" data-message-id="${messageId}"></i>`;
         }
     }
@@ -659,19 +687,22 @@ function addFileToUI(fileMessage, isSent, time, messageId, chatPath) {
     }
     
     let tickMarkHtml = '';
-    if (isSent && messageId) {
-        const readByCount = fileMessage.readBy ? Object.keys(fileMessage.readBy).length : 1;
-        const isRead = readByCount > 1;
-        const isDelivered = readByCount > 1 || (fileMessage.readBy && fileMessage.readBy.delivered);
+    if (isSent && messageId && currentChatId) {
+        // Check if recipient has read the message
+        const recipientHasRead = fileMessage.readBy && fileMessage.readBy[currentChatId] === true;
         
-        const recipientStatus = currentChatId && allUsers[currentChatId] ? allUsers[currentChatId].status : 'offline';
-        const recipientOnline = recipientStatus === 'online';
+        // Check recipient's current online status
+        const recipientStatus = allUsers[currentChatId] ? allUsers[currentChatId].status : 'offline';
+        const recipientIsOnline = recipientStatus === 'online';
         
-        if (isRead) {
+        if (recipientHasRead) {
+            // Message was read - DOUBLE BLUE TICK
             tickMarkHtml = `<i class="fas fa-check-double text-blue-500 text-xs" data-message-id="${messageId}"></i>`;
-        } else if (isDelivered || recipientOnline) {
+        } else if (recipientIsOnline) {
+            // Recipient online but not read - DOUBLE GRAY TICK
             tickMarkHtml = `<i class="fas fa-check-double text-gray-400 text-xs" data-message-id="${messageId}"></i>`;
         } else {
+            // Recipient offline - SINGLE GRAY TICK
             tickMarkHtml = `<i class="fas fa-check text-gray-400 text-xs" data-message-id="${messageId}"></i>`;
         }
     }
