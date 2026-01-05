@@ -130,8 +130,38 @@ async function register() {
         document.getElementById('verificationEmail').textContent = email;
         document.getElementById('authError').classList.add('hidden');
         
+        // Show success message and redirect to login after 3 seconds
+        const successMsg = document.createElement('div');
+        successMsg.className = 'mt-4 p-4 bg-green-50 border border-green-200 rounded-lg text-center';
+        successMsg.innerHTML = `
+            <i class="fas fa-check-circle text-green-600 text-2xl mb-2"></i>
+            <p class="text-green-800 font-semibold">Registration Successful!</p>
+            <p class="text-sm text-green-700 mt-1">Verification email sent to ${email}</p>
+            <p class="text-xs text-green-600 mt-2">Redirecting to login page in <span id="countdown">3</span> seconds...</p>
+        `;
+        document.getElementById('verificationNotice').appendChild(successMsg);
+        
         // Sign out the user until they verify
         await auth.signOut();
+        
+        // Countdown and redirect
+        let countdown = 3;
+        const countdownElement = document.getElementById('countdown');
+        const countdownInterval = setInterval(() => {
+            countdown--;
+            if (countdownElement) {
+                countdownElement.textContent = countdown;
+            }
+            if (countdown <= 0) {
+                clearInterval(countdownInterval);
+                // Redirect to login
+                document.getElementById('verificationNotice').classList.add('hidden');
+                document.getElementById('loginForm').classList.remove('hidden');
+                document.getElementById('registerForm').classList.add('hidden');
+                // Pre-fill email
+                document.getElementById('loginEmail').value = email;
+            }
+        }, 1000);
         
     } catch (error) {
         showError(error.message);
@@ -172,7 +202,7 @@ async function resendVerificationEmail() {
         }
         
         await user.sendEmailVerification();
-        alert('Verification email sent! Please check your inbox.');
+        showSuccessModal('Verification email sent! Please check your inbox.');
     } catch (error) {
         showError('Failed to send verification email: ' + error.message);
     }
@@ -214,17 +244,32 @@ async function checkEmailVerified() {
 
 // Logout
 async function logout() {
-    if (confirm('Are you sure you want to logout?')) {
-        try {
-            if (currentUser) {
-                await database.ref('users/' + currentUser.uid + '/status').set('offline');
-                await database.ref('users/' + currentUser.uid + '/lastSeen').set(firebase.database.ServerValue.TIMESTAMP);
-            }
-        } catch (error) {
-            console.log('Database update failed, but continuing logout...');
-        }
-        await auth.signOut();
+    // Close sidebar menu first
+    const sidebarMenu = document.getElementById('sidebarMenu');
+    if (sidebarMenu) {
+        sidebarMenu.classList.add('hidden');
     }
+    
+    showConfirmModal(
+        'Logout',
+        'Are you sure you want to logout?',
+        async () => {
+            try {
+                if (currentUser) {
+                    await database.ref('users/' + currentUser.uid + '/status').set('offline');
+                    await database.ref('users/' + currentUser.uid + '/lastSeen').set(firebase.database.ServerValue.TIMESTAMP);
+                }
+            } catch (error) {
+                console.log('Database update failed, but continuing logout...');
+            }
+            
+            await auth.signOut();
+            document.getElementById('authModal').classList.remove('hidden');
+            document.getElementById('chatApp').style.display = 'none';
+            currentUser = null;
+            currentChatId = null;
+        }
+    );
 }
 
 // Initialize app after login
@@ -252,7 +297,7 @@ async function initializeApp() {
         loadContacts();
     } catch (error) {
         console.error('Error initializing app:', error);
-        alert('Error loading chat. Please check your Firebase configuration and database rules.');
+        showSuccessModal('Error loading chat. Please check your Firebase configuration and database rules.');
     }
 }
 
@@ -264,9 +309,9 @@ function loadUsers() {
         initChatList();
     }, error => {
         console.error('Error loading users:', error);
-        // Only show alert if user is logged in
+        // Only show modal if user is logged in
         if (currentUser) {
-            alert('Cannot load users. Please check Firebase database rules.');
+            showSuccessModal('Cannot load users. Please check Firebase database rules.');
         }
     });
 }
@@ -305,7 +350,7 @@ function initChatList() {
         }
 
         const chatItem = document.createElement('div');
-        chatItem.className = 'flex items-center p-4 hover:bg-gray-100 border-b border-gray-200 transition relative group';
+        chatItem.className = 'chat-item flex items-center p-4 hover:bg-gray-100 border-b border-gray-200 transition relative';
         chatItem.dataset.userId = userId;
 
         // Use real-time user data if available, otherwise use cached contact data
@@ -331,7 +376,7 @@ function initChatList() {
                 </div>
             </div>
             <div class="relative">
-                <button onclick="event.stopPropagation(); toggleContactMenu('${userId}')" class="p-2 hover:bg-gray-200 rounded-full opacity-0 group-hover:opacity-100 transition" title="More options">
+                <button onclick="event.stopPropagation(); toggleContactMenu('${userId}')" class="contact-menu-btn p-2 hover:bg-gray-200 rounded-full transition" title="More options">
                     <i class="fas fa-ellipsis-vertical text-gray-600"></i>
                 </button>
                 <div id="contactMenu-${userId}" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
@@ -710,6 +755,119 @@ document.getElementById('messageText').addEventListener('keypress', function(e) 
     }
 });
 
+// Toggle emoji picker
+function toggleEmojiPicker() {
+    const emojiPicker = document.getElementById('emojiPicker');
+    emojiPicker.classList.toggle('hidden');
+}
+
+// Insert emoji into message input
+function insertEmoji(emoji) {
+    const messageText = document.getElementById('messageText');
+    const currentValue = messageText.value;
+    const cursorPosition = messageText.selectionStart;
+    
+    // Insert emoji at cursor position
+    messageText.value = currentValue.substring(0, cursorPosition) + emoji + currentValue.substring(cursorPosition);
+    
+    // Move cursor after emoji
+    messageText.selectionStart = messageText.selectionEnd = cursorPosition + emoji.length;
+    messageText.focus();
+    
+    // Close emoji picker
+    document.getElementById('emojiPicker').classList.add('hidden');
+}
+
+// Close emoji picker when clicking outside
+document.addEventListener('click', function(event) {
+    const emojiPicker = document.getElementById('emojiPicker');
+    const emojiButton = event.target.closest('button[onclick="toggleEmojiPicker()"]');
+    
+    if (emojiPicker && !emojiPicker.contains(event.target) && !emojiButton) {
+        emojiPicker.classList.add('hidden');
+    }
+});
+
+// Show success modal
+function showSuccessModal(message) {
+    const modal = document.getElementById('successModal');
+    const messageElement = document.getElementById('successMessage');
+    
+    messageElement.textContent = message;
+    modal.classList.remove('hidden');
+    
+    // Auto close after 2 seconds
+    setTimeout(() => {
+        modal.classList.add('hidden');
+    }, 2000);
+}
+
+// Show confirmation modal
+function showConfirmModal(title, message, onConfirm) {
+    const modal = document.getElementById('confirmModal');
+    const titleElement = document.getElementById('confirmTitle');
+    const messageElement = document.getElementById('confirmMessage');
+    const okBtn = document.getElementById('confirmOkBtn');
+    
+    titleElement.textContent = title;
+    messageElement.textContent = message;
+    modal.classList.remove('hidden');
+    
+    // Remove old listener and add new one
+    const newOkBtn = okBtn.cloneNode(true);
+    okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+    
+    newOkBtn.onclick = function() {
+        modal.classList.add('hidden');
+        onConfirm();
+    };
+}
+
+// Close confirmation modal
+function closeConfirmModal() {
+    document.getElementById('confirmModal').classList.add('hidden');
+}
+
+// Show input modal (for prompt replacement)
+function showInputModal(title, message, placeholder, onConfirm) {
+    const modal = document.getElementById('inputModal');
+    const titleElement = document.getElementById('inputTitle');
+    const messageElement = document.getElementById('inputMessage');
+    const inputField = document.getElementById('inputField');
+    const okBtn = document.getElementById('inputOkBtn');
+    
+    titleElement.textContent = title;
+    messageElement.textContent = message;
+    inputField.placeholder = placeholder;
+    inputField.value = '';
+    modal.classList.remove('hidden');
+    inputField.focus();
+    
+    // Remove old listener and add new one
+    const newOkBtn = okBtn.cloneNode(true);
+    okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+    
+    newOkBtn.onclick = function() {
+        const value = inputField.value;
+        modal.classList.add('hidden');
+        onConfirm(value);
+    };
+    
+    // Allow Enter key to submit
+    inputField.onkeypress = function(e) {
+        if (e.key === 'Enter') {
+            const value = inputField.value;
+            modal.classList.add('hidden');
+            onConfirm(value);
+        }
+    };
+}
+
+// Close input modal
+function closeInputModal() {
+    document.getElementById('inputModal').classList.add('hidden');
+}
+
 // Upload avatar
 async function uploadAvatar(event) {
     const file = event.target.files[0];
@@ -722,9 +880,9 @@ async function uploadAvatar(event) {
         try {
             await database.ref('users/' + currentUser.uid + '/avatar').set(avatarData);
             document.getElementById('userAvatar').src = avatarData;
-            alert('Profile picture updated!');
+            showSuccessModal('Profile picture updated successfully!');
         } catch (error) {
-            alert('Failed to upload: ' + error.message);
+            showSuccessModal('Failed to upload: ' + error.message);
         }
     };
     reader.readAsDataURL(file);
@@ -757,7 +915,7 @@ async function uploadFile(event) {
                 readBy: readByObj
             });
         } catch (error) {
-            alert('Failed to send file: ' + error.message);
+            showSuccessModal('Failed to send file: ' + error.message);
         }
     };
     reader.readAsDataURL(file);
@@ -829,7 +987,7 @@ async function deleteMessage(messageId, chatPath) {
                 messagesContainer.scrollTop = scrollPos;
             }, 100);
         } catch (error) {
-            alert('Failed to delete message: ' + error.message);
+            showSuccessModal('Failed to delete message: ' + error.message);
         }
     }
 }
@@ -872,7 +1030,21 @@ function viewContactInfo(userId) {
     const isOnline = user?.status === 'online';
     const about = user?.about || 'No status';
     
-    alert(`Contact Information\n\nName: ${displayName}\nEmail: ${displayEmail}\nStatus: ${isOnline ? 'Online' : 'Offline'}\nAbout: ${about}`);
+    // Update modal content
+    document.getElementById('contactInfoAvatar').src = displayAvatar;
+    document.getElementById('contactInfoName').textContent = displayName;
+    document.getElementById('contactInfoEmail').textContent = displayEmail;
+    document.getElementById('contactInfoStatus').textContent = isOnline ? 'Online' : 'Offline';
+    document.getElementById('contactInfoStatusDot').className = `w-3 h-3 rounded-full mr-2 ${isOnline ? 'bg-green-500' : 'bg-gray-400'}`;
+    document.getElementById('contactInfoAbout').textContent = about;
+    
+    // Show modal
+    document.getElementById('contactInfoModal').classList.remove('hidden');
+}
+
+// Close contact info modal
+function closeContactInfoModal() {
+    document.getElementById('contactInfoModal').classList.add('hidden');
 }
 
 // Delete contact
@@ -881,25 +1053,35 @@ async function deleteContact(userId) {
     const contact = userContacts[userId];
     const displayName = contact.name;
     
-    if (confirm(`Delete ${displayName} from your contacts?\n\nThis will remove them from your contact list but won't delete your chat history.`)) {
-        try {
-            await database.ref('contacts/' + currentUser.uid + '/' + userId).remove();
-            
-            // If chat is currently open with this contact, close it
-            if (currentChatId === userId) {
-                document.getElementById('welcomeScreen').classList.remove('hide');
-                document.getElementById('chatHeader').classList.remove('show');
-                document.getElementById('messagesContainer').classList.remove('show');
-                document.getElementById('messageInput').classList.remove('show');
-                currentChatId = null;
+    showConfirmModal(
+        `Delete ${displayName}?`,
+        `This will remove them from your contact list but won't delete your chat history.`,
+        async () => {
+            try {
+                await database.ref('contacts/' + currentUser.uid + '/' + userId).remove();
+                
+                // Remove from local cache immediately
+                delete userContacts[userId];
+                
+                // If chat is currently open with this contact, close it
+                if (currentChatId === userId) {
+                    document.getElementById('welcomeScreen').classList.remove('hide');
+                    document.getElementById('chatHeader').classList.remove('show');
+                    document.getElementById('messagesContainer').classList.remove('show');
+                    document.getElementById('messageInput').classList.remove('show');
+                    currentChatId = null;
+                }
+                
+                // Reload contacts to ensure sync
+                loadContacts();
+                
+                showSuccessModal(`${displayName} has been removed from your contacts`);
+            } catch (error) {
+                console.error('Error deleting contact:', error);
+                showSuccessModal('Failed to delete contact. Please try again.');
             }
-            
-            alert(`${displayName} has been removed from your contacts`);
-        } catch (error) {
-            console.error('Error deleting contact:', error);
-            alert('Failed to delete contact. Please try again.');
         }
-    }
+    );
 }
 
 // Block contact
@@ -908,40 +1090,49 @@ async function blockContact(userId) {
     const contact = userContacts[userId];
     
     if (!contact) {
-        alert('Contact not found');
+        showSuccessModal('Contact not found');
         return;
     }
     
     const displayName = contact.name;
     
-    if (confirm(`Block ${displayName}?\n\nBlocked contacts won't appear in your contact list. You can unblock them later from Settings.`)) {
-        try {
-            // Add to blocked list with contact info
-            await database.ref('blocked/' + currentUser.uid + '/' + userId).set({
-                name: contact.name,
-                email: contact.email,
-                avatar: contact.avatar,
-                blockedAt: firebase.database.ServerValue.TIMESTAMP
-            });
-            
-            // Remove from contacts
-            await database.ref('contacts/' + currentUser.uid + '/' + userId).remove();
-            
-            // If chat is currently open with this contact, close it
-            if (currentChatId === userId) {
-                document.getElementById('welcomeScreen').classList.remove('hide');
-                document.getElementById('chatHeader').classList.remove('show');
-                document.getElementById('messagesContainer').classList.remove('show');
-                document.getElementById('messageInput').classList.remove('show');
-                currentChatId = null;
+    showConfirmModal(
+        `Block ${displayName}?`,
+        `Blocked contacts won't appear in your contact list. You can unblock them later from Settings.`,
+        async () => {
+            try {
+                // Add to blocked list with contact info
+                await database.ref('blocked/' + currentUser.uid + '/' + userId).set({
+                    name: contact.name,
+                    email: contact.email,
+                    avatar: contact.avatar,
+                    blockedAt: firebase.database.ServerValue.TIMESTAMP
+                });
+                
+                // Remove from contacts
+                await database.ref('contacts/' + currentUser.uid + '/' + userId).remove();
+                
+                // If chat is currently open with this contact, close it
+                if (currentChatId === userId) {
+                    document.getElementById('welcomeScreen').classList.remove('hide');
+                    document.getElementById('chatHeader').classList.remove('show');
+                    document.getElementById('messagesContainer').classList.remove('show');
+                    document.getElementById('messageInput').classList.remove('show');
+                    currentChatId = null;
+                }
+                
+                showSuccessModal(`${displayName} has been blocked`);
+                
+                // Auto-dismiss after 2 seconds
+                setTimeout(() => {
+                    document.getElementById('successModal').classList.add('hidden');
+                }, 2000);
+            } catch (error) {
+                console.error('Error blocking contact:', error);
+                showSuccessModal('Failed to block contact: ' + error.message + '\n\nPlease make sure you have updated your Firebase Database Rules to include the "blocked" section.');
             }
-            
-            alert(`${displayName} has been blocked`);
-        } catch (error) {
-            console.error('Error blocking contact:', error);
-            alert('Failed to block contact: ' + error.message + '\n\nPlease make sure you have updated your Firebase Database Rules to include the "blocked" section.');
         }
-    }
+    );
 }
 
 // Close menus when clicking outside
@@ -1083,10 +1274,18 @@ function loadContacts() {
 
 // Open add contact modal
 function openAddContactModal() {
+    searchedUser = null; // Reset searched user state
     document.getElementById('addContactModal').classList.remove('hidden');
     document.getElementById('contactSearchEmail').value = '';
     document.getElementById('contactSearchResult').classList.add('hidden');
     document.getElementById('contactSearchError').classList.add('hidden');
+    
+    // Reset button state
+    const btn = document.getElementById('addContactBtn');
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-user-plus mr-2"></i>Add to Contacts';
+    }
 }
 
 // Close add contact modal
@@ -1095,24 +1294,12 @@ function closeAddContactModal() {
     searchedUser = null;
 }
 
-// Search for a user by email
+// Search for a user by email or name
 async function searchContact() {
-    const email = document.getElementById('contactSearchEmail').value.trim().toLowerCase();
+    const searchQuery = document.getElementById('contactSearchEmail').value.trim().toLowerCase();
     
-    if (!email) {
-        showContactError('Please enter an email address');
-        return;
-    }
-    
-    // Basic email validation
-    if (!email.includes('@') || !email.includes('.')) {
-        showContactError('Please enter a valid email address');
-        return;
-    }
-    
-    // Check if searching for own email
-    if (email === currentUser.email.toLowerCase()) {
-        showContactError('You cannot add yourself as a contact');
+    if (!searchQuery) {
+        showContactError('Please enter an email address or name');
         return;
     }
     
@@ -1124,11 +1311,41 @@ async function searchContact() {
         let foundUser = null;
         let foundUserId = null;
         
-        for (let userId in users) {
-            if (users[userId].email && users[userId].email.toLowerCase() === email) {
-                foundUser = users[userId];
-                foundUserId = userId;
-                break;
+        // Check if query looks like an email
+        const isEmailSearch = searchQuery.includes('@');
+        
+        if (isEmailSearch) {
+            // Basic email validation
+            if (!searchQuery.includes('.')) {
+                showContactError('Please enter a valid email address');
+                return;
+            }
+            
+            // Check if searching for own email
+            if (searchQuery === currentUser.email.toLowerCase()) {
+                showContactError('You cannot add yourself as a contact');
+                return;
+            }
+            
+            // Search by email
+            for (let userId in users) {
+                if (users[userId].email && users[userId].email.toLowerCase() === searchQuery) {
+                    foundUser = users[userId];
+                    foundUserId = userId;
+                    break;
+                }
+            }
+        } else {
+            // Search by name
+            for (let userId in users) {
+                if (users[userId].name && users[userId].name.toLowerCase().includes(searchQuery)) {
+                    // Check if it's not the current user
+                    if (userId !== currentUser.uid) {
+                        foundUser = users[userId];
+                        foundUserId = userId;
+                        break;
+                    }
+                }
             }
         }
         
@@ -1136,7 +1353,7 @@ async function searchContact() {
             searchedUser = { id: foundUserId, ...foundUser };
             displaySearchResult(foundUser);
         } else {
-            showContactError('No user found with this email address');
+            showContactError(`No user found with this ${isEmailSearch ? 'email' : 'name'}`);
         }
     } catch (error) {
         console.error('Error searching contact:', error);
@@ -1145,7 +1362,7 @@ async function searchContact() {
 }
 
 // Display search result
-function displaySearchResult(user) {
+async function displaySearchResult(user) {
     document.getElementById('contactSearchError').classList.add('hidden');
     document.getElementById('contactSearchResult').classList.remove('hidden');
     
@@ -1153,13 +1370,26 @@ function displaySearchResult(user) {
     document.getElementById('searchResultName').textContent = user.name;
     document.getElementById('searchResultEmail').textContent = user.email;
     
-    // Check if already in contacts
-    const isAlreadyAdded = userContacts[searchedUser.id];
+    // Reset button to default state first
+    const btn = document.getElementById('addContactBtn');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-user-plus mr-2"></i>Add to Contacts';
     
-    if (isAlreadyAdded) {
-        document.getElementById('addContactBtn').classList.add('hidden');
-        document.getElementById('contactAddedMsg').classList.remove('hidden');
-    } else {
+    // Check if already in contacts from Firebase (to avoid stale cache)
+    try {
+        const contactSnapshot = await database.ref('contacts/' + currentUser.uid + '/' + searchedUser.id).once('value');
+        const isAlreadyAdded = contactSnapshot.exists();
+        
+        if (isAlreadyAdded) {
+            document.getElementById('addContactBtn').classList.add('hidden');
+            document.getElementById('contactAddedMsg').classList.remove('hidden');
+        } else {
+            document.getElementById('addContactBtn').classList.remove('hidden');
+            document.getElementById('contactAddedMsg').classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Error checking contact status:', error);
+        // Default to showing add button if there's an error
         document.getElementById('addContactBtn').classList.remove('hidden');
         document.getElementById('contactAddedMsg').classList.add('hidden');
     }
@@ -1181,6 +1411,10 @@ async function addContact() {
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Adding...';
         
+        // Store name and ID before clearing searchedUser
+        const contactName = searchedUser.name;
+        const contactId = searchedUser.id;
+        
         // Add to contacts in Firebase
         await database.ref('contacts/' + currentUser.uid + '/' + searchedUser.id).set({
             name: searchedUser.name,
@@ -1189,22 +1423,30 @@ async function addContact() {
             addedAt: firebase.database.ServerValue.TIMESTAMP
         });
         
-        // Show success
-        btn.innerHTML = '<i class="fas fa-check mr-2"></i>Added!';
-        btn.classList.remove('bg-green-500', 'hover:bg-green-600');
-        btn.classList.add('bg-green-600');
+        // Update local cache immediately
+        userContacts[contactId] = {
+            name: searchedUser.name,
+            email: searchedUser.email,
+            avatar: searchedUser.avatar
+        };
         
-        setTimeout(() => {
-            closeAddContactModal();
-            // Contacts will auto-refresh due to listener
-        }, 1000);
+        // Close modal (this will clear searchedUser)
+        closeAddContactModal();
+        
+        // Show success modal using stored name
+        showSuccessModal(`${contactName} successfully added to contacts!`);
+        
+        // Reload contacts immediately to reflect changes
+        loadContacts();
         
     } catch (error) {
         console.error('Error adding contact:', error);
-        alert('Failed to add contact. Please try again.');
+        showSuccessModal('Failed to add contact. Please try again.');
         const btn = document.getElementById('addContactBtn');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-user-plus mr-2"></i>Add to Contacts';
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-user-plus mr-2"></i>Add to Contacts';
+        }
     }
 }
 
@@ -1283,7 +1525,7 @@ async function updateProfilePhoto(event) {
     if (!file || !currentUser) return;
 
     if (file.size > 5 * 1024 * 1024) {
-        alert('Image size should be less than 5MB');
+        showSuccessModal('Image size should be less than 5MB');
         return;
     }
 
@@ -1301,9 +1543,9 @@ async function updateProfilePhoto(event) {
             // Reload users to update chat list
             loadUsers();
             
-            alert('Profile picture updated successfully!');
+            showSuccessModal('Profile picture updated successfully!');
         } catch (error) {
-            alert('Failed to upload: ' + error.message);
+            showSuccessModal('Failed to upload: ' + error.message);
         }
     };
     reader.readAsDataURL(file);
@@ -1338,20 +1580,15 @@ async function saveAllSettings() {
         // Reload users to update UI everywhere
         loadUsers();
         
-        // Success feedback
-        btn.innerHTML = '<i class="fas fa-check mr-2"></i>Saved!';
-        btn.classList.remove('bg-green-500', 'hover:bg-green-600');
-        btn.classList.add('bg-green-600');
+        // Reset button
+        btn.disabled = false;
+        btn.innerHTML = originalText;
         
-        setTimeout(() => {
-            btn.disabled = false;
-            btn.innerHTML = originalText;
-            btn.classList.add('bg-green-500', 'hover:bg-green-600');
-            btn.classList.remove('bg-green-600');
-        }, 2000);
+        // Show success modal
+        showSuccessModal('Settings saved successfully!');
         
     } catch (error) {
-        alert('Failed to save settings: ' + error.message);
+        showSuccessModal('Failed to save settings: ' + error.message);
         const btn = event.target;
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-floppy-disk mr-2"></i>Save Changes';
@@ -1377,19 +1614,19 @@ function toggleNotifications() {
             Notification.requestPermission().then(permission => {
                 if (permission === 'granted') {
                     localStorage.setItem('notificationsEnabled', 'true');
-                    alert('Notifications enabled!');
+                    showSuccessModal('Notifications enabled!');
                 } else {
                     document.getElementById('notificationsToggle').checked = false;
-                    alert('Please allow notifications in your browser settings');
+                    showSuccessModal('Please allow notifications in your browser settings');
                 }
             });
         } else {
             document.getElementById('notificationsToggle').checked = false;
-            alert('Notifications are not supported in this browser');
+            showSuccessModal('Notifications are not supported in this browser');
         }
     } else {
         localStorage.setItem('notificationsEnabled', 'false');
-        alert('Notifications disabled');
+        showSuccessModal('Notifications disabled');
     }
 }
 
@@ -1441,56 +1678,75 @@ async function unblockContact(userId) {
         const blocked = snapshot.val();
         
         if (!blocked) {
-            alert('Contact not found in blocked list');
+            showSuccessModal('Contact not found in blocked list');
             return;
         }
         
-        if (confirm(`Unblock ${blocked.name}?`)) {
-            // Remove from blocked list
-            await database.ref('blocked/' + currentUser.uid + '/' + userId).remove();
-            
-            // Reload blocked contacts list
-            loadBlockedContacts();
-            
-            alert(`${blocked.name} has been unblocked. You can add them as a contact again if you wish.`);
-        }
+        showConfirmModal(
+            `Unblock ${blocked.name}?`,
+            '',
+            async () => {
+                try {
+                    // Remove from blocked list
+                    await database.ref('blocked/' + currentUser.uid + '/' + userId).remove();
+                    
+                    // Reload blocked contacts list
+                    loadBlockedContacts();
+                    
+                    showSuccessModal(`${blocked.name} has been unblocked. You can add them as a contact again if you wish.`);
+                    
+                    // Auto-dismiss after 2 seconds
+                    setTimeout(() => {
+                        document.getElementById('successModal').classList.add('hidden');
+                    }, 2000);
+                } catch (error) {
+                    console.error('Error unblocking contact:', error);
+                    showSuccessModal('Failed to unblock contact: ' + error.message);
+                }
+            }
+        );
     } catch (error) {
         console.error('Error unblocking contact:', error);
-        alert('Failed to unblock contact: ' + error.message);
+        showSuccessModal('Failed to unblock contact: ' + error.message);
     }
 }
 
 // Delete account
 async function deleteAccount() {
-    const confirmation = prompt('This will permanently delete your account and all data. Type DELETE to confirm:');
-    
-    if (confirmation !== 'DELETE') {
-        alert('Account deletion cancelled');
-        return;
-    }
-    
-    try {
-        // Delete user data from database
-        await database.ref('users/' + currentUser.uid).remove();
-        
-        // Delete all chats involving this user
-        const chatsSnapshot = await database.ref('chats').once('value');
-        const chats = chatsSnapshot.val() || {};
-        
-        for (let chatId in chats) {
-            if (chatId.includes(currentUser.uid)) {
-                await database.ref('chats/' + chatId).remove();
+    showInputModal(
+        'Delete Account',
+        'This will permanently delete your account and all data. Type DELETE to confirm:',
+        'DELETE',
+        async (confirmation) => {
+            if (confirmation !== 'DELETE') {
+                showSuccessModal('Account deletion cancelled');
+                return;
+            }
+            
+            try {
+                // Delete user data from database
+                await database.ref('users/' + currentUser.uid).remove();
+                
+                // Delete all chats involving this user
+                const chatsSnapshot = await database.ref('chats').once('value');
+                const chats = chatsSnapshot.val() || {};
+                
+                for (let chatId in chats) {
+                    if (chatId.includes(currentUser.uid)) {
+                        await database.ref('chats/' + chatId).remove();
+                    }
+                }
+                
+                // Delete Firebase Auth account
+                await currentUser.delete();
+                
+                showSuccessModal('Account deleted successfully');
+                closeSettings();
+            } catch (error) {
+                showSuccessModal('Failed to delete account: ' + error.message + '. You may need to re-login and try again.');
             }
         }
-        
-        // Delete Firebase Auth account
-        await currentUser.delete();
-        
-        alert('Account deleted successfully');
-        closeSettings();
-    } catch (error) {
-        alert('Failed to delete account: ' + error.message + '. You may need to re-login and try again.');
-    }
+    );
 }
 
 // Add event listener for about character count

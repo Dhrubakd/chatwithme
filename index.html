@@ -164,6 +164,23 @@
             0%, 100% { background-color: transparent; }
             50% { background-color: rgba(251, 191, 36, 0.2); }
         }
+        
+        /* Contact menu - show only on hover */
+        .contact-menu-btn {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        
+        .chat-item:hover .contact-menu-btn {
+            opacity: 1;
+        }
+        
+        /* Always show contact menu on mobile/small screens */
+        @media (max-width: 767px) {
+            .contact-menu-btn {
+                opacity: 1 !important;
+            }
+        }
     </style>
     
     <!-- Firebase SDK -->
@@ -275,20 +292,16 @@
             <!-- Header -->
             <div class="bg-gray-100 p-3 md:p-4 flex items-center justify-between border-b border-gray-300">
                 <div class="flex items-center space-x-2 md:space-x-3 flex-1 min-w-0">
-                    <div class="relative cursor-pointer" onclick="document.getElementById('avatarUpload').click()">
+                    <div class="relative">
                         <img id="userAvatar" src="https://ui-avatars.com/api/?name=You&background=random" alt="Profile" class="w-9 h-9 md:w-10 md:h-10 rounded-full">
-                        <div class="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-30 rounded-full flex items-center justify-center transition">
-                            <i class="fas fa-camera text-white opacity-0 hover:opacity-100 text-xs"></i>
-                        </div>
                     </div>
-                    <input type="file" id="avatarUpload" accept="image/*" class="hidden" onchange="uploadAvatar(event)">
                     <div class="flex-1 min-w-0">
                         <h2 id="userName" class="text-base md:text-xl font-semibold truncate">Chats</h2>
                         <p id="userStatus" class="text-xs text-green-500">● online</p>
                     </div>
                 </div>
                 <div class="relative">
-                    <button onclick="toggleSidebarMenu()" class="hover:text-gray-800 p-2" title="Menu">
+                    <button onclick="toggleSidebarMenu()" class="hover:text-gray-800 hover:bg-gray-200 p-2 rounded-full transition" title="Menu">
                         <i class="fas fa-ellipsis-vertical text-lg"></i>
                     </button>
                     <!-- Dropdown Menu -->
@@ -341,18 +354,15 @@
                     </div>
                 </div>
                 <div class="flex space-x-2 md:space-x-4 text-gray-600">
-                    <button onclick="toggleChatSearch()" class="hover:text-gray-800 p-2" title="Search in conversation">
-                        <i class="fas fa-magnifying-glass text-lg"></i>
-                    </button>
                     <div class="relative">
-                        <button onclick="toggleChatMenu()" class="hover:text-gray-800 p-2" title="More options">
+                        <button onclick="toggleChatMenu()" class="hover:text-gray-800 hover:bg-gray-200 p-2 rounded-full transition" title="More options">
                             <i class="fas fa-ellipsis-vertical text-lg"></i>
                         </button>
                         <!-- Dropdown Menu -->
                         <div id="chatMenu" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
                             <button onclick="deleteAllMessages()" class="w-full text-left px-4 py-3 hover:bg-gray-100 text-red-600 flex items-center space-x-3 rounded-t-lg">
                                 <i class="fas fa-trash"></i>
-                                <span>Delete all messages</span>
+                                <span>Clear all</span>
                             </button>
                             <button onclick="toggleChatSearch()" class="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 flex items-center space-x-3 rounded-b-lg">
                                 <i class="fas fa-magnifying-glass"></i>
@@ -400,21 +410,54 @@
             </div>
 
             <!-- Message Input -->
-            <div id="messageInput" class="bg-gray-100 p-2 md:p-4 border-t border-gray-300">
-                <div class="flex items-center space-x-2 md:space-x-3">
-                    <button class="text-gray-600 hover:text-gray-800 p-2">
-                        <i class="fas fa-face-smile text-xl md:text-2xl"></i>
+            <div id="messageInput" class="bg-gray-100 p-2 md:p-3 border-t border-gray-300">
+                <div class="flex items-center space-x-2">
+                    <!-- Message input box with icons inside -->
+                    <div class="flex-1 bg-white rounded-full flex items-center px-2 md:px-3 py-1">
+                        <button onclick="toggleEmojiPicker()" class="text-gray-600 hover:text-gray-800 p-1.5 md:p-2" title="Emoji">
+                            <i class="fas fa-face-smile text-lg md:text-xl"></i>
+                        </button>
+                        <button onclick="document.getElementById('fileUpload').click()" class="text-gray-600 hover:text-gray-800 p-1.5 md:p-2 mr-1" title="Attach file">
+                            <i class="fas fa-paperclip text-lg md:text-xl"></i>
+                        </button>
+                        <input type="file" id="fileUpload" accept="image/*,video/*,application/pdf" class="hidden" onchange="uploadFile(event)">
+                        <input type="text" id="messageText" placeholder="Type a message" 
+                               oninput="handleTyping()"
+                               class="flex-1 px-2 py-2 md:py-2.5 focus:outline-none text-sm md:text-base bg-transparent">
+                    </div>
+                    <button id="sendButton" onclick="sendMessage()" class="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white rounded-full w-10 h-10 md:w-12 md:h-12 flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-paper-plane text-sm md:text-base"></i>
                     </button>
-                    <button onclick="document.getElementById('fileUpload').click()" class="text-gray-600 hover:text-gray-800 p-2" title="Attach file">
-                        <i class="fas fa-paperclip text-xl md:text-2xl"></i>
-                    </button>
-                    <input type="file" id="fileUpload" accept="image/*,video/*,application/pdf" class="hidden" onchange="uploadFile(event)">
-                    <input type="text" id="messageText" placeholder="Type a message" 
-                           oninput="handleTyping()"
-                           class="flex-1 px-3 md:px-4 py-2 md:py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-base">
-                    <button id="sendButton" class="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white rounded-full w-11 h-11 md:w-12 md:h-12 flex items-center justify-center flex-shrink-0">
-                        <i class="fas fa-paper-plane"></i>
-                    </button>
+                </div>
+                
+                <!-- Emoji Picker -->
+                <div id="emojiPicker" class="hidden mt-2 bg-white rounded-lg shadow-lg p-3 max-w-xs">
+                    <div class="grid grid-cols-8 gap-2 text-2xl max-h-48 overflow-y-auto">
+                        <button onclick="insertEmoji('😀')" class="hover:bg-gray-100 rounded p-1">😀</button>
+                        <button onclick="insertEmoji('😂')" class="hover:bg-gray-100 rounded p-1">😂</button>
+                        <button onclick="insertEmoji('😍')" class="hover:bg-gray-100 rounded p-1">😍</button>
+                        <button onclick="insertEmoji('🥰')" class="hover:bg-gray-100 rounded p-1">🥰</button>
+                        <button onclick="insertEmoji('😊')" class="hover:bg-gray-100 rounded p-1">😊</button>
+                        <button onclick="insertEmoji('😎')" class="hover:bg-gray-100 rounded p-1">😎</button>
+                        <button onclick="insertEmoji('😢')" class="hover:bg-gray-100 rounded p-1">😢</button>
+                        <button onclick="insertEmoji('😭')" class="hover:bg-gray-100 rounded p-1">😭</button>
+                        <button onclick="insertEmoji('😡')" class="hover:bg-gray-100 rounded p-1">😡</button>
+                        <button onclick="insertEmoji('🤔')" class="hover:bg-gray-100 rounded p-1">🤔</button>
+                        <button onclick="insertEmoji('👍')" class="hover:bg-gray-100 rounded p-1">👍</button>
+                        <button onclick="insertEmoji('👎')" class="hover:bg-gray-100 rounded p-1">👎</button>
+                        <button onclick="insertEmoji('🙏')" class="hover:bg-gray-100 rounded p-1">🙏</button>
+                        <button onclick="insertEmoji('❤️')" class="hover:bg-gray-100 rounded p-1">❤️</button>
+                        <button onclick="insertEmoji('💔')" class="hover:bg-gray-100 rounded p-1">💔</button>
+                        <button onclick="insertEmoji('✨')" class="hover:bg-gray-100 rounded p-1">✨</button>
+                        <button onclick="insertEmoji('🔥')" class="hover:bg-gray-100 rounded p-1">🔥</button>
+                        <button onclick="insertEmoji('⭐')" class="hover:bg-gray-100 rounded p-1">⭐</button>
+                        <button onclick="insertEmoji('🎉')" class="hover:bg-gray-100 rounded p-1">🎉</button>
+                        <button onclick="insertEmoji('💯')" class="hover:bg-gray-100 rounded p-1">💯</button>
+                        <button onclick="insertEmoji('✅')" class="hover:bg-gray-100 rounded p-1">✅</button>
+                        <button onclick="insertEmoji('❌')" class="hover:bg-gray-100 rounded p-1">❌</button>
+                        <button onclick="insertEmoji('💪')" class="hover:bg-gray-100 rounded p-1">💪</button>
+                        <button onclick="insertEmoji('🙌')" class="hover:bg-gray-100 rounded p-1">🙌</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -431,16 +474,16 @@
             </div>
             <div class="p-6">
                 <div class="mb-4">
-                    <label class="block text-gray-700 text-sm font-bold mb-2">Search by Email</label>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Search by Email or Name</label>
                     <div class="relative">
-                        <input type="email" id="contactSearchEmail" placeholder="example@email.com" 
+                        <input type="text" id="contactSearchEmail" placeholder="Enter email or name" 
                                onkeypress="if(event.key === 'Enter') searchContact()"
                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
                         <button onclick="searchContact()" class="absolute right-0 top-1/2 -translate-y-1/2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center justify-center">
                             <i class="fas fa-search"></i>
                         </button>
                     </div>
-                    <p class="text-xs text-gray-500 mt-2">Enter the email address of the person you want to add</p>
+                    <p class="text-xs text-gray-500 mt-2">Enter the email address or name of the person you want to add</p>
                 </div>
                 
                 <div id="contactSearchResult" class="hidden mt-4">
@@ -469,22 +512,65 @@
         </div>
     </div>
 
-    <!-- Settings Modal -->
-    <div id="settingsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <!-- Contact Info Modal -->
+    <div id="contactInfoModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
         <div class="bg-white rounded-lg max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <!-- Settings Header -->
-            <div class="bg-green-600 text-white p-4 flex items-center justify-between">
-                <div class="flex items-center space-x-3">
-                    <button onclick="closeSettings()" class="hover:bg-green-700 p-2 rounded-full">
-                        <i class="fas fa-arrow-left"></i>
+            <div class="bg-green-600 text-white p-4 flex items-center justify-center sticky top-0 z-10">
+                <h2 class="text-xl font-bold">Contact Information</h2>
+            </div>
+            <div class="p-6">
+                <!-- Contact Avatar -->
+                <div class="flex flex-col items-center mb-6">
+                    <img id="contactInfoAvatar" src="" alt="Contact" class="w-32 h-32 rounded-full mb-4 shadow-lg">
+                    <h3 id="contactInfoName" class="text-2xl font-bold text-gray-800"></h3>
+                </div>
+                
+                <!-- Contact Details -->
+                <div class="space-y-4">
+                    <div class="border-b border-gray-200 pb-3">
+                        <label class="text-xs text-gray-500 uppercase font-semibold">Email</label>
+                        <p id="contactInfoEmail" class="text-gray-800 mt-1"></p>
+                    </div>
+                    
+                    <div class="border-b border-gray-200 pb-3">
+                        <label class="text-xs text-gray-500 uppercase font-semibold">Status</label>
+                        <div class="flex items-center mt-1">
+                            <span id="contactInfoStatusDot" class="w-3 h-3 rounded-full mr-2"></span>
+                            <span id="contactInfoStatus" class="text-gray-800"></span>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="text-xs text-gray-500 uppercase font-semibold">About</label>
+                        <p id="contactInfoAbout" class="text-gray-800 mt-1"></p>
+                    </div>
+                </div>
+                
+                <!-- Close Button -->
+                <div class="mt-6">
+                    <button onclick="closeContactInfoModal()" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 rounded-lg">
+                        Close
                     </button>
-                    <h2 class="text-xl font-semibold">Settings</h2>
                 </div>
             </div>
+        </div>
+    </div>
 
-            <!-- Profile Section -->
-            <div class="p-6 border-b border-gray-200">
-                <h3 class="text-sm text-gray-500 mb-4 uppercase font-semibold">Profile</h3>
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white rounded-lg max-w-md w-full max-h-[90vh] flex flex-col relative">
+            <!-- Settings Close Button - Absolute positioned -->
+            <button onclick="closeSettings()" class="absolute top-3 right-4 z-50 bg-white hover:bg-gray-100 p-2 rounded-full shadow-md flex items-center justify-center w-7 h-7">
+                <i class="fas fa-times text-gray-600 text-lg"></i>
+            </button>
+
+            <!-- Profile Section with overflow -->
+            <div class="overflow-y-auto rounded-lg">
+                <!-- Profile Header -->
+                <div class="sticky top-0 bg-green-600 z-10 p-6 pb-4 text-white rounded-t-lg">
+                    <h3 class="text-lg uppercase font-bold">Profile</h3>
+                </div>
+                <div class="px-6 pb-6 pt-6 bg-white"
                 
                 <!-- Profile Photo -->
                 <div class="flex items-center space-x-4 mb-6">
@@ -598,6 +684,50 @@
                     <i class="fas fa-trash mr-2"></i>Delete Account
                 </button>
                 <p class="text-xs text-gray-400 mt-2 text-center">This action cannot be undone</p>
+            </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg p-6 max-w-sm w-full mx-4 shadow-lg">
+            <h3 id="confirmTitle" class="text-lg font-bold text-gray-800 mb-3"></h3>
+            <p id="confirmMessage" class="text-gray-600 mb-6 text-sm"></p>
+            <div class="flex space-x-3">
+                <button id="confirmCancelBtn" onclick="closeConfirmModal()" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 rounded-lg">
+                    Cancel
+                </button>
+                <button id="confirmOkBtn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-2 rounded-lg">
+                    OK
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Message Modal -->
+    <div id="successModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg p-6 max-w-sm w-full mx-4 text-center shadow-lg">
+            <div class="mb-4">
+                <i class="fas fa-check-circle text-green-500 text-5xl"></i>
+            </div>
+            <p id="successMessage" class="text-gray-800 font-semibold text-lg"></p>
+        </div>
+    </div>
+
+    <!-- Input Modal (for prompt replacement) -->
+    <div id="inputModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg p-6 max-w-sm w-full mx-4 shadow-lg">
+            <h3 id="inputTitle" class="text-lg font-bold text-gray-800 mb-3"></h3>
+            <p id="inputMessage" class="text-gray-600 mb-4 text-sm"></p>
+            <input type="text" id="inputField" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 mb-4" placeholder="">
+            <div class="flex space-x-3">
+                <button onclick="closeInputModal()" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 rounded-lg">
+                    Cancel
+                </button>
+                <button id="inputOkBtn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-2 rounded-lg">
+                    OK
+                </button>
             </div>
         </div>
     </div>
