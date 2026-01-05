@@ -64,8 +64,11 @@
             display: none !important;
         }
         
-        /* Chat header */
+        /* Chat header - Fixed at top on mobile */
         #chatHeader {
+            position: sticky;
+            top: 0;
+            z-index: 100;
             flex-shrink: 0;
             display: none;
         }
@@ -87,8 +90,11 @@
             display: block !important;
         }
         
-        /* Message input */
+        /* Message input - Fixed at bottom on mobile */
         #messageInput {
+            position: sticky;
+            bottom: 0;
+            z-index: 100;
             flex-shrink: 0;
             display: none;
         }
