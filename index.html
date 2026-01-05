@@ -14,20 +14,16 @@
             box-sizing: border-box;
         }
         
-        /* Full height layout - Prevent scrolling on mobile keyboard */
+        /* Full height layout - Allow keyboard on mobile */
         html {
             height: 100%;
             overflow: hidden;
-            position: fixed;
-            width: 100%;
         }
         
         body {
             height: 100%;
             overflow: hidden;
-            position: fixed;
             width: 100%;
-            touch-action: manipulation;
         }
         
         /* Main container */
@@ -54,7 +50,7 @@
         
         /* Chat window - Mobile first */
         .chat-window {
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
             width: 100%;
@@ -63,7 +59,6 @@
             flex-direction: column;
             z-index: 20;
             background: #f3f4f6;
-            overflow: hidden;
         }
         
         .chat-window.hidden-mobile {
@@ -72,12 +67,8 @@
         
         /* Chat header - Absolute within chat window */
         #chatHeader {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 100;
             flex-shrink: 0;
+            z-index: 100;
             display: none;
         }
         
@@ -85,13 +76,9 @@
             display: flex !important;
         }
         
-        /* Messages container - Account for fixed header and input */
+        /* Messages container - Scrollable middle section */
         #messagesContainer {
-            position: absolute;
-            top: 60px;
-            bottom: 60px;
-            left: 0;
-            right: 0;
+            flex: 1;
             overflow-y: auto;
             overflow-x: hidden;
             -webkit-overflow-scrolling: touch;
@@ -102,14 +89,10 @@
             display: block !important;
         }
         
-        /* Message input - Absolute at bottom of chat window */
+        /* Message input - At bottom */
         #messageInput {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            z-index: 100;
             flex-shrink: 0;
+            z-index: 100;
             display: none;
         }
         
