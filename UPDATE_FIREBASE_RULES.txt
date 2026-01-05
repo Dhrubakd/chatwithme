@@ -1,0 +1,29 @@
+⚠️ IMPORTANT: UPDATE YOUR FIREBASE RULES ⚠️
+================================================
+
+To enable the Block/Unblock feature, you MUST update your Firebase Database Rules.
+
+QUICK STEPS:
+------------
+1. Go to: https://console.firebase.google.com/
+2. Select your project: "chat-app-9f4f1"
+3. Click "Realtime Database" in the left menu
+4. Click the "Rules" tab
+5. Copy the rules from FIREBASE_DATABASE_RULES.txt
+6. Click "Publish"
+7. Refresh your chat app
+
+WHY THIS IS NEEDED:
+------------------
+The blocking feature stores blocked users in a new "blocked" path in your database.
+Without updating the rules, Firebase will reject these writes and you'll see the error:
+"Failed to block contact. Please try again."
+
+WHAT'S NEW:
+-----------
+✅ Block contacts (removes from contact list)
+✅ View blocked contacts in Settings
+✅ Unblock contacts with one click
+✅ Blocked users can't appear in your contact list
+
+After updating the rules, the blocking feature will work perfectly!

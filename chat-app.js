@@ -24,12 +24,29 @@ let typingTimeout = null;
 // Auth state observer
 auth.onAuthStateChanged(user => {
     if (user) {
+        // Check if email is verified
+        if (!user.emailVerified) {
+            // Show verification notice
+            document.getElementById('loginForm').classList.add('hidden');
+            document.getElementById('registerForm').classList.add('hidden');
+            document.getElementById('verificationNotice').classList.remove('hidden');
+            document.getElementById('verificationEmail').textContent = user.email;
+            document.getElementById('authModal').classList.remove('hidden');
+            return;
+        }
+        
         currentUser = user;
         document.getElementById('authModal').classList.add('hidden');
+        document.getElementById('verificationNotice').classList.add('hidden');
+        
+        // Update email verified status in database
+        database.ref('users/' + user.uid + '/emailVerified').set(true);
+        
         initializeApp();
     } else {
         currentUser = null;
         document.getElementById('authModal').classList.remove('hidden');
+        document.getElementById('verificationNotice').classList.add('hidden');
         
         // Clear form fields on logout
         document.getElementById('loginEmail').value = '';
@@ -95,12 +112,27 @@ async function register() {
             name: name,
             email: email,
             avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
-            status: 'online',
+            status: 'offline',
+            emailVerified: false,
             lastSeen: firebase.database.ServerValue.TIMESTAMP
         });
 
         // Update display name
         await user.updateProfile({ displayName: name });
+        
+        // Send verification email
+        await user.sendEmailVerification();
+        
+        // Show verification notice
+        document.getElementById('loginForm').classList.add('hidden');
+        document.getElementById('registerForm').classList.add('hidden');
+        document.getElementById('verificationNotice').classList.remove('hidden');
+        document.getElementById('verificationEmail').textContent = email;
+        document.getElementById('authError').classList.add('hidden');
+        
+        // Sign out the user until they verify
+        await auth.signOut();
+        
     } catch (error) {
         showError(error.message);
     }
@@ -117,9 +149,66 @@ async function login() {
     }
 
     try {
-        await auth.signInWithEmailAndPassword(email, password);
+        const userCredential = await auth.signInWithEmailAndPassword(email, password);
+        const user = userCredential.user;
+        
+        // Check if email is verified
+        if (!user.emailVerified) {
+            showError('Please verify your email before logging in. Check your inbox for the verification link.');
+            await auth.signOut();
+        }
     } catch (error) {
         showError(error.message);
+    }
+}
+
+// Resend verification email
+async function resendVerificationEmail() {
+    try {
+        const user = auth.currentUser;
+        if (!user) {
+            showError('No user logged in');
+            return;
+        }
+        
+        await user.sendEmailVerification();
+        alert('Verification email sent! Please check your inbox.');
+    } catch (error) {
+        showError('Failed to send verification email: ' + error.message);
+    }
+}
+
+// Check if email is verified
+async function checkEmailVerified() {
+    try {
+        const user = auth.currentUser;
+        if (!user) {
+            // Try to get the last registered email and ask user to login
+            document.getElementById('verificationNotice').classList.add('hidden');
+            document.getElementById('loginForm').classList.remove('hidden');
+            showError('Please login with your verified email');
+            return;
+        }
+        
+        // Reload user to get fresh email verification status
+        await user.reload();
+        
+        if (user.emailVerified) {
+            // Email is verified, proceed to app
+            document.getElementById('verificationNotice').classList.add('hidden');
+            document.getElementById('authModal').classList.add('hidden');
+            
+            // Update database
+            await database.ref('users/' + user.uid + '/emailVerified').set(true);
+            await database.ref('users/' + user.uid + '/status').set('online');
+            
+            currentUser = user;
+            initializeApp();
+        } else {
+            showError('Email not verified yet. Please check your inbox and click the verification link.');
+        }
+    } catch (error) {
+        showError('Failed to check verification: ' + error.message);
     }
 }
 
@@ -160,6 +249,7 @@ async function initializeApp() {
         }
 
         loadUsers();
+        loadContacts();
     } catch (error) {
         console.error('Error initializing app:', error);
         alert('Error loading chat. Please check your Firebase configuration and database rules.');
@@ -186,53 +276,53 @@ function initChatList() {
     const chatList = document.getElementById('chatList');
     chatList.innerHTML = '';
 
-    const userCount = Object.keys(allUsers).length;
+    const contactCount = Object.keys(userContacts).length;
 
-    console.log('Total users:', userCount);
+    console.log('Total contacts:', contactCount);
 
-    if (userCount === 0 || (userCount === 1 && allUsers[currentUser.uid])) {
+    if (contactCount === 0) {
         chatList.innerHTML = `
             <div class="p-8 text-center text-gray-500">
-                <i class="fas fa-users text-4xl mb-3"></i>
-                <p class="font-semibold">No users yet</p>
-                <p class="text-sm mt-2">Open this app in another browser or device and create a new account to start chatting!</p>
+                <i class="fas fa-user-plus text-4xl mb-3"></i>
+                <p class="font-semibold">No contacts yet</p>
+                <p class="text-sm mt-2 mb-4">Add contacts to start chatting with them!</p>
+                <button onclick="openAddContactModal()" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg">
+                    <i class="fas fa-user-plus mr-2"></i>Add Contact
+                </button>
             </div>
         `;
         return;
     }
 
-    let hasOtherUsers = false;
-
-    // Add individual users
-    // Add individual users
-    Object.keys(allUsers).forEach(userId => {
-        if (userId === currentUser.uid) return;
-
-        hasOtherUsers = true;
-
+    // Add contacts to chat list
+    Object.keys(userContacts).forEach(userId => {
+        const contact = userContacts[userId];
         const user = allUsers[userId];
         
-        if (!user || !user.name) {
-            console.warn('Invalid user data for:', userId);
+        if (!contact || !contact.name) {
+            console.warn('Invalid contact data for:', userId);
             return;
         }
 
         const chatItem = document.createElement('div');
-        chatItem.className = 'flex items-center p-4 hover:bg-gray-100 cursor-pointer border-b border-gray-200 transition';
-        chatItem.onclick = () => openChat(userId);
+        chatItem.className = 'flex items-center p-4 hover:bg-gray-100 border-b border-gray-200 transition relative group';
+        chatItem.dataset.userId = userId;
 
-        const isOnline = user.status === 'online';
+        // Use real-time user data if available, otherwise use cached contact data
+        const displayAvatar = user?.avatar || contact.avatar;
+        const displayName = user?.name || contact.name;
+        const isOnline = user?.status === 'online';
         const statusColor = isOnline ? 'bg-green-500' : 'bg-gray-400';
-        const aboutText = user.about && user.about.trim() ? user.about : (isOnline ? '● online' : 'offline');
+        const aboutText = (user?.about && user.about.trim()) ? user.about : (isOnline ? '● online' : 'offline');
 
         chatItem.innerHTML = `
-            <div class="relative">
-                <img src="${user.avatar}" alt="${user.name}" class="w-12 h-12 rounded-full mr-3">
+            <div class="relative cursor-pointer" onclick="openChat('${userId}')">
+                <img src="${displayAvatar}" alt="${displayName}" class="w-12 h-12 rounded-full mr-3">
                 <span class="${statusColor} w-3 h-3 rounded-full absolute bottom-0 right-3 border-2 border-white"></span>
             </div>
-            <div class="flex-1 min-w-0">
+            <div class="flex-1 min-w-0 cursor-pointer" onclick="openChat('${userId}')">
                 <div class="flex justify-between items-baseline">
-                    <h4 class="font-semibold truncate">${user.name}</h4>
+                    <h4 class="font-semibold truncate">${displayName}</h4>
                 </div>
                 <div class="flex justify-between items-center">
                     <p class="text-sm ${isOnline ? 'text-green-600' : 'text-gray-500'} truncate">
@@ -240,20 +330,29 @@ function initChatList() {
                     </p>
                 </div>
             </div>
+            <div class="relative">
+                <button onclick="event.stopPropagation(); toggleContactMenu('${userId}')" class="p-2 hover:bg-gray-200 rounded-full opacity-0 group-hover:opacity-100 transition" title="More options">
+                    <i class="fas fa-ellipsis-vertical text-gray-600"></i>
+                </button>
+                <div id="contactMenu-${userId}" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                    <button onclick="event.stopPropagation(); viewContactInfo('${userId}')" class="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 flex items-center space-x-3 rounded-t-lg">
+                        <i class="fas fa-circle-info"></i>
+                        <span>Contact Info</span>
+                    </button>
+                    <button onclick="event.stopPropagation(); deleteContact('${userId}')" class="w-full text-left px-4 py-3 hover:bg-gray-100 text-red-600 flex items-center space-x-3">
+                        <i class="fas fa-trash"></i>
+                        <span>Delete Contact</span>
+                    </button>
+                    <button onclick="event.stopPropagation(); blockContact('${userId}')" class="w-full text-left px-4 py-3 hover:bg-gray-100 text-red-600 flex items-center space-x-3 rounded-b-lg">
+                        <i class="fas fa-ban"></i>
+                        <span>Block Contact</span>
+                    </button>
+                </div>
+            </div>
         `;
 
         chatList.appendChild(chatItem);
     });
-
-    if (!hasOtherUsers) {
-        chatList.innerHTML = `
-            <div class="p-8 text-center text-gray-500">
-                <i class="fas fa-users text-4xl mb-3"></i>
-                <p class="font-semibold">No other users online</p>
-                <p class="text-sm mt-2">Create another account in a different browser to test the chat!</p>
-            </div>
-        `;
-    }
 }
 
 // Open chat with specific user
@@ -741,13 +840,136 @@ function toggleChatMenu() {
     menu.classList.toggle('hidden');
 }
 
-// Close chat menu when clicking outside
+// Toggle sidebar menu dropdown
+function toggleSidebarMenu() {
+    const menu = document.getElementById('sidebarMenu');
+    menu.classList.toggle('hidden');
+}
+
+// Toggle contact menu dropdown
+function toggleContactMenu(userId) {
+    const menu = document.getElementById('contactMenu-' + userId);
+    
+    // Close all other contact menus
+    document.querySelectorAll('[id^="contactMenu-"]').forEach(m => {
+        if (m.id !== 'contactMenu-' + userId) {
+            m.classList.add('hidden');
+        }
+    });
+    
+    menu.classList.toggle('hidden');
+}
+
+// View contact info
+function viewContactInfo(userId) {
+    toggleContactMenu(userId);
+    const contact = userContacts[userId];
+    const user = allUsers[userId];
+    
+    const displayName = user?.name || contact.name;
+    const displayEmail = user?.email || contact.email;
+    const displayAvatar = user?.avatar || contact.avatar;
+    const isOnline = user?.status === 'online';
+    const about = user?.about || 'No status';
+    
+    alert(`Contact Information\n\nName: ${displayName}\nEmail: ${displayEmail}\nStatus: ${isOnline ? 'Online' : 'Offline'}\nAbout: ${about}`);
+}
+
+// Delete contact
+async function deleteContact(userId) {
+    toggleContactMenu(userId);
+    const contact = userContacts[userId];
+    const displayName = contact.name;
+    
+    if (confirm(`Delete ${displayName} from your contacts?\n\nThis will remove them from your contact list but won't delete your chat history.`)) {
+        try {
+            await database.ref('contacts/' + currentUser.uid + '/' + userId).remove();
+            
+            // If chat is currently open with this contact, close it
+            if (currentChatId === userId) {
+                document.getElementById('welcomeScreen').classList.remove('hide');
+                document.getElementById('chatHeader').classList.remove('show');
+                document.getElementById('messagesContainer').classList.remove('show');
+                document.getElementById('messageInput').classList.remove('show');
+                currentChatId = null;
+            }
+            
+            alert(`${displayName} has been removed from your contacts`);
+        } catch (error) {
+            console.error('Error deleting contact:', error);
+            alert('Failed to delete contact. Please try again.');
+        }
+    }
+}
+
+// Block contact
+async function blockContact(userId) {
+    toggleContactMenu(userId);
+    const contact = userContacts[userId];
+    
+    if (!contact) {
+        alert('Contact not found');
+        return;
+    }
+    
+    const displayName = contact.name;
+    
+    if (confirm(`Block ${displayName}?\n\nBlocked contacts won't appear in your contact list. You can unblock them later from Settings.`)) {
+        try {
+            // Add to blocked list with contact info
+            await database.ref('blocked/' + currentUser.uid + '/' + userId).set({
+                name: contact.name,
+                email: contact.email,
+                avatar: contact.avatar,
+                blockedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+            
+            // Remove from contacts
+            await database.ref('contacts/' + currentUser.uid + '/' + userId).remove();
+            
+            // If chat is currently open with this contact, close it
+            if (currentChatId === userId) {
+                document.getElementById('welcomeScreen').classList.remove('hide');
+                document.getElementById('chatHeader').classList.remove('show');
+                document.getElementById('messagesContainer').classList.remove('show');
+                document.getElementById('messageInput').classList.remove('show');
+                currentChatId = null;
+            }
+            
+            alert(`${displayName} has been blocked`);
+        } catch (error) {
+            console.error('Error blocking contact:', error);
+            alert('Failed to block contact: ' + error.message + '\n\nPlease make sure you have updated your Firebase Database Rules to include the "blocked" section.');
+        }
+    }
+}
+
+// Close menus when clicking outside
 document.addEventListener('click', function(event) {
-    const menu = document.getElementById('chatMenu');
+    const chatMenu = document.getElementById('chatMenu');
+    const sidebarMenu = document.getElementById('sidebarMenu');
     const button = event.target.closest('button');
     
-    if (!menu.contains(event.target) && button && !button.onclick.toString().includes('toggleChatMenu')) {
-        menu.classList.add('hidden');
+    // Get button's onclick attribute or function
+    const buttonOnclick = button ? (button.getAttribute('onclick') || (button.onclick ? button.onclick.toString() : '')) : '';
+    
+    // Close chat menu
+    if (chatMenu && !chatMenu.contains(event.target) && button && !buttonOnclick.includes('toggleChatMenu')) {
+        chatMenu.classList.add('hidden');
+    }
+    
+    // Close sidebar menu
+    if (sidebarMenu && !sidebarMenu.contains(event.target) && button && !buttonOnclick.includes('toggleSidebarMenu')) {
+        sidebarMenu.classList.add('hidden');
+    }
+    
+    // Close all contact menus
+    if (button && !buttonOnclick.includes('toggleContactMenu')) {
+        document.querySelectorAll('[id^="contactMenu-"]').forEach(menu => {
+            if (!menu.contains(event.target)) {
+                menu.classList.add('hidden');
+            }
+        });
     }
 });
 
@@ -842,6 +1064,150 @@ function clearSearchHighlights() {
     });
 }
 
+// Contact Management Functions
+let userContacts = {};
+let searchedUser = null;
+
+// Load user's contacts from Firebase
+function loadContacts() {
+    if (!currentUser) return;
+    
+    database.ref('contacts/' + currentUser.uid).on('value', snapshot => {
+        userContacts = snapshot.val() || {};
+        console.log('Loaded contacts:', userContacts);
+        initChatList();
+    }, error => {
+        console.error('Error loading contacts:', error);
+    });
+}
+
+// Open add contact modal
+function openAddContactModal() {
+    document.getElementById('addContactModal').classList.remove('hidden');
+    document.getElementById('contactSearchEmail').value = '';
+    document.getElementById('contactSearchResult').classList.add('hidden');
+    document.getElementById('contactSearchError').classList.add('hidden');
+}
+
+// Close add contact modal
+function closeAddContactModal() {
+    document.getElementById('addContactModal').classList.add('hidden');
+    searchedUser = null;
+}
+
+// Search for a user by email
+async function searchContact() {
+    const email = document.getElementById('contactSearchEmail').value.trim().toLowerCase();
+    
+    if (!email) {
+        showContactError('Please enter an email address');
+        return;
+    }
+    
+    // Basic email validation
+    if (!email.includes('@') || !email.includes('.')) {
+        showContactError('Please enter a valid email address');
+        return;
+    }
+    
+    // Check if searching for own email
+    if (email === currentUser.email.toLowerCase()) {
+        showContactError('You cannot add yourself as a contact');
+        return;
+    }
+    
+    try {
+        // Search through all users
+        const usersSnapshot = await database.ref('users').once('value');
+        const users = usersSnapshot.val() || {};
+        
+        let foundUser = null;
+        let foundUserId = null;
+        
+        for (let userId in users) {
+            if (users[userId].email && users[userId].email.toLowerCase() === email) {
+                foundUser = users[userId];
+                foundUserId = userId;
+                break;
+            }
+        }
+        
+        if (foundUser) {
+            searchedUser = { id: foundUserId, ...foundUser };
+            displaySearchResult(foundUser);
+        } else {
+            showContactError('No user found with this email address');
+        }
+    } catch (error) {
+        console.error('Error searching contact:', error);
+        showContactError('Failed to search. Please try again.');
+    }
+}
+
+// Display search result
+function displaySearchResult(user) {
+    document.getElementById('contactSearchError').classList.add('hidden');
+    document.getElementById('contactSearchResult').classList.remove('hidden');
+    
+    document.getElementById('searchResultAvatar').src = user.avatar;
+    document.getElementById('searchResultName').textContent = user.name;
+    document.getElementById('searchResultEmail').textContent = user.email;
+    
+    // Check if already in contacts
+    const isAlreadyAdded = userContacts[searchedUser.id];
+    
+    if (isAlreadyAdded) {
+        document.getElementById('addContactBtn').classList.add('hidden');
+        document.getElementById('contactAddedMsg').classList.remove('hidden');
+    } else {
+        document.getElementById('addContactBtn').classList.remove('hidden');
+        document.getElementById('contactAddedMsg').classList.add('hidden');
+    }
+}
+
+// Show error message in contact search
+function showContactError(message) {
+    document.getElementById('contactSearchResult').classList.add('hidden');
+    document.getElementById('contactSearchError').classList.remove('hidden');
+    document.getElementById('contactSearchErrorMsg').textContent = message;
+}
+
+// Add contact to user's contact list
+async function addContact() {
+    if (!searchedUser) return;
+    
+    try {
+        const btn = document.getElementById('addContactBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Adding...';
+        
+        // Add to contacts in Firebase
+        await database.ref('contacts/' + currentUser.uid + '/' + searchedUser.id).set({
+            name: searchedUser.name,
+            email: searchedUser.email,
+            avatar: searchedUser.avatar,
+            addedAt: firebase.database.ServerValue.TIMESTAMP
+        });
+        
+        // Show success
+        btn.innerHTML = '<i class="fas fa-check mr-2"></i>Added!';
+        btn.classList.remove('bg-green-500', 'hover:bg-green-600');
+        btn.classList.add('bg-green-600');
+        
+        setTimeout(() => {
+            closeAddContactModal();
+            // Contacts will auto-refresh due to listener
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Error adding contact:', error);
+        alert('Failed to add contact. Please try again.');
+        const btn = document.getElementById('addContactBtn');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-user-plus mr-2"></i>Add to Contacts';
+    }
+}
+
 // Settings Functions
 
 // Open settings modal
@@ -881,6 +1247,9 @@ async function loadSettingsData() {
                 document.getElementById('lastSeenTime').textContent = lastSeen.toLocaleString();
             }
         }
+        
+        // Load blocked contacts
+        loadBlockedContacts();
     } catch (error) {
         console.error('Error loading settings:', error);
     }
@@ -1021,6 +1390,73 @@ function toggleNotifications() {
     } else {
         localStorage.setItem('notificationsEnabled', 'false');
         alert('Notifications disabled');
+    }
+}
+
+// Load blocked contacts
+async function loadBlockedContacts() {
+    const blockedList = document.getElementById('blockedContactsList');
+    
+    try {
+        const snapshot = await database.ref('blocked/' + currentUser.uid).once('value');
+        const blocked = snapshot.val() || {};
+        
+        if (Object.keys(blocked).length === 0) {
+            blockedList.innerHTML = '<p class="text-sm text-gray-500">No blocked contacts</p>';
+            return;
+        }
+        
+        blockedList.innerHTML = '';
+        
+        Object.keys(blocked).forEach(userId => {
+            const contact = blocked[userId];
+            const blockedItem = document.createElement('div');
+            blockedItem.className = 'flex items-center justify-between p-3 bg-gray-50 rounded-lg';
+            
+            blockedItem.innerHTML = `
+                <div class="flex items-center space-x-3 flex-1 min-w-0">
+                    <img src="${contact.avatar}" alt="${contact.name}" class="w-10 h-10 rounded-full">
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-semibold truncate">${contact.name}</p>
+                        <p class="text-xs text-gray-500 truncate">${contact.email}</p>
+                    </div>
+                </div>
+                <button onclick="unblockContact('${userId}')" class="text-sm bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded">
+                    Unblock
+                </button>
+            `;
+            
+            blockedList.appendChild(blockedItem);
+        });
+    } catch (error) {
+        console.error('Error loading blocked contacts:', error);
+        blockedList.innerHTML = '<p class="text-sm text-red-500">Failed to load blocked contacts</p>';
+    }
+}
+
+// Unblock contact
+async function unblockContact(userId) {
+    try {
+        const snapshot = await database.ref('blocked/' + currentUser.uid + '/' + userId).once('value');
+        const blocked = snapshot.val();
+        
+        if (!blocked) {
+            alert('Contact not found in blocked list');
+            return;
+        }
+        
+        if (confirm(`Unblock ${blocked.name}?`)) {
+            // Remove from blocked list
+            await database.ref('blocked/' + currentUser.uid + '/' + userId).remove();
+            
+            // Reload blocked contacts list
+            loadBlockedContacts();
+            
+            alert(`${blocked.name} has been unblocked. You can add them as a contact again if you wish.`);
+        }
+    } catch (error) {
+        console.error('Error unblocking contact:', error);
+        alert('Failed to unblock contact: ' + error.message);
     }
 }
 

@@ -21,6 +21,18 @@ Follow these steps to fix the "Cannot load users" error:
         ".write": "auth.uid == $uid"
       }
     },
+    "contacts": {
+      "$uid": {
+        ".read": "auth.uid == $uid",
+        ".write": "auth.uid == $uid"
+      }
+    },
+    "blocked": {
+      "$uid": {
+        ".read": "auth.uid == $uid",
+        ".write": "auth.uid == $uid"
+      }
+    },
     "chats": {
       ".read": "auth != null",
       ".write": "auth != null"
@@ -40,8 +52,10 @@ Follow these steps to fix the "Cannot load users" error:
 WHAT THESE RULES DO:
 --------------------
 - "auth != null" means only logged-in users can access data
-- Users can read all user profiles (to see contact list)
+- Users can read all user profiles (to search and add contacts)
 - Users can only edit their own profile
+- Each user can only read/write their own contacts list
+- Each user can only read/write their own blocked list
 - All logged-in users can read/write chats
 - Typing indicators accessible to all logged-in users
 
