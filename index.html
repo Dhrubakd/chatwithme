@@ -64,10 +64,12 @@
             display: none !important;
         }
         
-        /* Chat header - Fixed at top on mobile */
+        /* Chat header - Fixed at top */
         #chatHeader {
-            position: sticky;
+            position: fixed;
             top: 0;
+            left: 0;
+            right: 0;
             z-index: 100;
             flex-shrink: 0;
             display: none;
@@ -77,23 +79,27 @@
             display: flex !important;
         }
         
-        /* Messages container */
+        /* Messages container - Account for fixed header and input */
         #messagesContainer {
             flex: 1;
             overflow-y: auto;
             overflow-x: hidden;
             -webkit-overflow-scrolling: touch;
             display: none;
+            padding-top: 60px;
+            padding-bottom: 60px;
         }
         
         #messagesContainer.show {
             display: block !important;
         }
         
-        /* Message input - Fixed at bottom on mobile */
+        /* Message input - Fixed at bottom */
         #messageInput {
-            position: sticky;
+            position: fixed;
             bottom: 0;
+            left: 0;
+            right: 0;
             z-index: 100;
             flex-shrink: 0;
             display: none;
