@@ -40,6 +40,22 @@ Follow these steps to fix the "Cannot load users" error:
     "typing": {
       ".read": "auth != null",
       ".write": "auth != null"
+    },
+    "videos": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$videoId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "likes": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "comments": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
+      }
     }
   }
 }

@@ -295,6 +295,9 @@ async function initializeApp() {
 
         loadUsers();
         loadContacts();
+
+        // Default to chats view after login/refresh
+        showChatsView();
     } catch (error) {
         console.error('Error initializing app:', error);
         showSuccessModal('Error loading chat. Please check your Firebase configuration and database rules.');
@@ -676,12 +679,15 @@ function addFileToUI(fileMessage, isSent, time, messageId, chatPath) {
     messageDiv.className = 'flex mb-4 group ' + (isSent ? 'justify-end' : 'justify-start');
 
     const isImage = fileMessage.fileType.startsWith('image/');
+    const isVideo = fileMessage.fileType.startsWith('video/');
     
     const deleteButton = isSent && messageId ? `<button onclick="deleteMessage('${messageId}', '${chatPath}')" class="absolute -left-8 top-2 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700" title="Delete message"><i class="fas fa-trash text-sm"></i></button>` : '';
     
     let fileHtml = '';
     if (isImage) {
         fileHtml = '<img src="' + fileMessage.fileData + '" alt="' + fileMessage.fileName + '" class="max-w-xs rounded mb-2 cursor-pointer" onclick="window.open(\'' + fileMessage.fileData + '\', \'_blank\')">';
+    } else if (isVideo) {
+        fileHtml = '<video controls class="max-w-xs rounded mb-2" style="max-height: 400px;"><source src="' + fileMessage.fileData + '" type="' + fileMessage.fileType + '">Your browser does not support video playback.</video>';
     } else {
         fileHtml = '<a href="' + fileMessage.fileData + '" download="' + fileMessage.fileName + '" class="flex items-center text-blue-500 hover:text-blue-700"><i class="fas fa-file mr-2"></i><span class="text-sm">' + fileMessage.fileName + '</span></a>';
     }
@@ -924,6 +930,19 @@ async function uploadAvatar(event) {
 async function uploadFile(event) {
     const file = event.target.files[0];
     if (!file || !currentChatId) return;
+
+    // Check file size limit (100 MB)
+    const maxSize = 100 * 1024 * 1024; // 100 MB in bytes
+    if (file.size > maxSize) {
+        showSuccessModal('File is too large! Maximum size is 100 MB.');
+        event.target.value = ''; // Reset file input
+        return;
+    }
+
+    // Show uploading message
+    if (file.type.startsWith('video/')) {
+        showSuccessModal('Uploading video... Please wait.');
+    }
 
     const reader = new FileReader();
     reader.onload = async function(e) {
@@ -1788,3 +1807,607 @@ document.addEventListener('DOMContentLoaded', function() {
         aboutInput.addEventListener('input', updateAboutCharCount);
     }
 });
+
+// ============================================
+// VIDEO FEED FUNCTIONALITY
+// ============================================
+
+// Show chats view
+function showChatsView() {
+    // Update tabs
+    document.getElementById('chatsTab').className = 'flex-1 py-3 px-4 text-center font-semibold border-b-2 border-green-500 text-green-600 transition';
+    document.getElementById('videosTab').className = 'flex-1 py-3 px-4 text-center font-semibold border-b-2 border-transparent text-gray-600 hover:bg-gray-50 transition';
+    
+    // Show chat window, hide videos view
+    const chatWindow = document.getElementById('chatWindow');
+    const videosView = document.getElementById('videosView');
+    const chatSidebar = document.getElementById('chatSidebar');
+    
+    // Ensure chat pane visible and videos hidden
+    videosView.style.display = 'none';
+    videosView.style.flex = '0';
+    videosView.classList.add('hidden');
+    
+    if (window.innerWidth < 768) {
+        // Mobile: show only sidebar (chat list) and hide chat pane
+        chatSidebar.classList.remove('hidden-mobile');
+        chatSidebar.style.display = 'flex';
+        chatWindow.classList.add('hidden-mobile');
+        chatWindow.classList.add('hidden');
+        chatWindow.style.display = 'none';
+        chatWindow.style.flex = '0';
+    } else {
+        // Desktop: show sidebar and chat pane
+        chatSidebar.classList.remove('hidden-mobile');
+        chatSidebar.style.display = 'flex';
+        chatWindow.classList.remove('hidden-mobile');
+        chatWindow.classList.remove('hidden');
+        chatWindow.style.display = 'flex';
+        chatWindow.style.flex = '1';
+    }
+}
+
+// Show videos view
+function showVideosView() {
+    // Update tabs
+    document.getElementById('chatsTab').className = 'flex-1 py-3 px-4 text-center font-semibold border-b-2 border-transparent text-gray-600 hover:bg-gray-50 transition';
+    document.getElementById('videosTab').className = 'flex-1 py-3 px-4 text-center font-semibold border-b-2 border-green-500 text-green-600 transition';
+    
+    // Hide chat window, show videos view
+    const chatWindow = document.getElementById('chatWindow');
+    const videosView = document.getElementById('videosView');
+    const chatSidebar = document.getElementById('chatSidebar');
+    
+    // Hide chat completely
+    chatWindow.classList.add('hidden-mobile');
+    chatWindow.classList.add('hidden');
+    chatWindow.style.display = 'none';
+    chatWindow.style.flex = '0';
+    
+    // Show videos on the right
+    videosView.classList.remove('hidden');
+    videosView.style.display = 'flex';
+    videosView.style.flex = '1';
+    
+    // On mobile, hide sidebar; on desktop, keep it visible
+    if (window.innerWidth < 768) {
+        chatSidebar.style.display = 'none';
+    } else {
+        chatSidebar.style.display = 'flex';
+    }
+    
+    // Load videos
+    loadVideosFeed();
+}
+
+// Open upload video modal
+function openUploadVideoModal() {
+    document.getElementById('uploadVideoModal').classList.remove('hidden');
+    document.getElementById('videoTitle').value = '';
+    document.getElementById('videoDescription').value = '';
+    document.getElementById('videoFileInput').value = '';
+}
+
+// Close upload video modal
+function closeUploadVideoModal() {
+    document.getElementById('uploadVideoModal').classList.add('hidden');
+}
+
+// Upload video to feed
+async function uploadVideoToFeed() {
+    const title = document.getElementById('videoTitle').value.trim();
+    const description = document.getElementById('videoDescription').value.trim();
+    const fileInput = document.getElementById('videoFileInput');
+    const file = fileInput.files[0];
+    
+    if (!title) {
+        showSuccessModal('Please enter a video title');
+        return;
+    }
+    
+    if (!file) {
+        showSuccessModal('Please select a video file');
+        return;
+    }
+    
+    // Check file size (100 MB limit)
+    const maxSize = 100 * 1024 * 1024;
+    if (file.size > maxSize) {
+        showSuccessModal('Video is too large! Maximum size is 100 MB.');
+        return;
+    }
+    
+    // Check if it's a video
+    if (!file.type.startsWith('video/')) {
+        showSuccessModal('Please select a valid video file');
+        return;
+    }
+    
+    showSuccessModal('Uploading video... Please wait.');
+    closeUploadVideoModal();
+    
+    try {
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            const videoData = e.target.result;
+            
+            // Upload to Firebase
+            await database.ref('videos').push({
+                title: title,
+                description: description,
+                videoData: videoData,
+                fileName: file.name,
+                fileType: file.type,
+                userId: currentUser.uid,
+                userName: currentUser.displayName,
+                userAvatar: allUsers[currentUser.uid]?.avatar || currentUser.photoURL,
+                timestamp: firebase.database.ServerValue.TIMESTAMP,
+                likes: 0,
+                views: 0
+            });
+            
+            showSuccessModal('Video uploaded successfully!');
+            loadVideosFeed();
+        };
+        reader.readAsDataURL(file);
+    } catch (error) {
+        console.error('Error uploading video:', error);
+        showSuccessModal('Failed to upload video: ' + error.message);
+    }
+}
+
+// Load videos feed
+function loadVideosFeed() {
+    const feedContainer = document.getElementById('videosFeed');
+    
+    database.ref('videos').orderByChild('timestamp').once('value', snapshot => {
+        const videos = [];
+        snapshot.forEach(childSnapshot => {
+            videos.unshift({
+                id: childSnapshot.key,
+                ...childSnapshot.val()
+            });
+        });
+        
+        if (videos.length === 0) {
+            feedContainer.innerHTML = `
+                <div class="flex items-center justify-center h-full text-gray-400">
+                    <div class="text-center">
+                        <i class="fas fa-video text-6xl mb-4"></i>
+                        <p class="text-lg">No videos yet</p>
+                        <button onclick="openUploadVideoModal()" class="mt-4 bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg">
+                            <i class="fas fa-plus mr-2"></i>Upload First Video
+                        </button>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        feedContainer.innerHTML = '';
+        
+        videos.forEach(video => {
+            const videoCard = createVideoCard(video);
+            feedContainer.appendChild(videoCard);
+        });
+    });
+}
+
+// Create video card
+function createVideoCard(video) {
+    const card = document.createElement('div');
+    card.className = 'video-card';
+    card.id = 'video-card-' + video.id;
+    
+    const isOwner = video.userId === currentUser.uid;
+    
+    // Check if current user has liked
+    const userHasLiked = video.likes && video.likes[currentUser.uid] === true;
+    const likeCount = video.likes ? Object.keys(video.likes).length : 0;
+    
+    // Get comment count
+    const commentCount = video.comments ? Object.keys(video.comments).length : 0;
+    
+    const menuButton = isOwner ? `
+        <div class="absolute top-3 right-3 z-20">
+            <button onclick="toggleVideoMenu('${video.id}')" class="bg-gray-900 bg-opacity-70 hover:bg-opacity-90 text-white rounded-full w-10 h-10 flex items-center justify-center transition shadow-lg">
+                <i class="fas fa-ellipsis-vertical"></i>
+            </button>
+            <div id="video-menu-${video.id}" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-30">
+                <button onclick="openEditVideo('${video.id}')" class="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 flex items-center space-x-3 rounded-t-lg">
+                    <i class="fas fa-edit"></i>
+                    <span>Edit Video</span>
+                </button>
+                <button onclick="deleteVideo('${video.id}')" class="w-full text-left px-4 py-3 hover:bg-gray-100 text-red-600 flex items-center space-x-3 rounded-b-lg">
+                    <i class="fas fa-trash"></i>
+                    <span>Delete Video</span>
+                </button>
+            </div>
+        </div>
+    ` : '';
+    
+    card.innerHTML = `
+        <!-- Video Wrapper -->
+        <div class="video-card-wrapper">
+            ${menuButton}
+            
+            <!-- Play button overlay -->
+            <button id="play-btn-${video.id}" onclick="toggleVideoPlay('${video.id}')" class="absolute inset-0 flex items-center justify-center z-10 bg-black bg-opacity-20 transition hover:bg-opacity-30">
+                <div class="bg-white bg-opacity-95 hover:bg-opacity-100 rounded-full p-5 shadow-2xl transition transform hover:scale-110">
+                    <i class="fas fa-play text-4xl text-green-600"></i>
+                </div>
+            </button>
+            
+            <video id="video-${video.id}" playsinline>
+                <source src="${video.videoData}" type="${video.fileType}">
+            </video>
+        </div>
+        
+        <!-- Video Information -->
+        <div class="video-card-info">
+            <div class="flex items-center space-x-3 mb-3">
+                <img src="${video.userAvatar}" alt="${video.userName}" class="w-10 h-10 rounded-full border-2 border-gray-600">
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold text-white text-sm truncate">${video.userName}</p>
+                    <p class="text-xs text-gray-400">${formatVideoTime(video.timestamp)}</p>
+                </div>
+                <div class="flex items-center space-x-1 text-gray-400">
+                    <i class="fas fa-eye text-sm"></i>
+                    <span class="text-xs font-semibold">${video.views || 0}</span>
+                </div>
+            </div>
+            
+            <h3 class="font-bold text-white text-base mb-2 line-clamp-2">${escapeHtml(video.title)}</h3>
+            ${video.description ? `<p class="text-sm text-gray-300 line-clamp-3 leading-relaxed">${escapeHtml(video.description)}</p>` : ''}
+        </div>
+        
+        <!-- Action Buttons -->
+        <div class="video-card-actions">
+            <!-- Like button -->
+            <button onclick="toggleLike('${video.id}')" class="flex flex-col items-center space-y-1 transition transform hover:scale-110 active:scale-95">
+                <div class="flex items-center justify-center">
+                    <i id="like-icon-${video.id}" class="fas fa-heart text-2xl ${userHasLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-400'}"></i>
+                </div>
+                <span id="like-count-${video.id}" class="text-white text-xs font-semibold">${likeCount}</span>
+            </button>
+            
+            <!-- Comment button -->
+            <button onclick="openComments('${video.id}')" class="flex flex-col items-center space-y-1 transition transform hover:scale-110 active:scale-95">
+                <div class="flex items-center justify-center">
+                    <i class="fas fa-comment text-2xl text-gray-400 hover:text-blue-400"></i>
+                </div>
+                <span id="comment-count-${video.id}" class="text-white text-xs font-semibold">${commentCount}</span>
+            </button>
+            
+            <!-- Share button -->
+            <button onclick="shareVideo('${video.id}')" class="flex flex-col items-center space-y-1 transition transform hover:scale-110 active:scale-95">
+                <div class="flex items-center justify-center">
+                    <i class="fas fa-share text-2xl text-gray-400 hover:text-green-400"></i>
+                </div>
+                <span class="text-white text-xs font-semibold">Share</span>
+            </button>
+        </div>
+    `;
+    
+    // Add video event listeners after card is created
+    setTimeout(() => {
+        const videoElement = document.getElementById('video-' + video.id);
+        const playButton = document.getElementById('play-btn-' + video.id);
+        
+        if (videoElement) {
+            videoElement.addEventListener('play', () => {
+                if (playButton) playButton.classList.add('hidden');
+                incrementVideoView(video.id);
+            });
+            
+            videoElement.addEventListener('pause', () => {
+                if (playButton) playButton.classList.remove('hidden');
+            });
+            
+            videoElement.addEventListener('ended', () => {
+                if (playButton) playButton.classList.remove('hidden');
+            });
+            
+            // Click on video to pause/play
+            videoElement.addEventListener('click', () => {
+                toggleVideoPlay(video.id);
+            });
+        }
+    }, 100);
+    
+    return card;
+}
+
+// Format video timestamp
+function formatVideoTime(timestamp) {
+    if (!timestamp) return 'Just now';
+    
+    const now = Date.now();
+    const diff = now - timestamp;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) return days + ' day' + (days > 1 ? 's' : '') + ' ago';
+    if (hours > 0) return hours + ' hour' + (hours > 1 ? 's' : '') + ' ago';
+    if (minutes > 0) return minutes + ' min' + (minutes > 1 ? 's' : '') + ' ago';
+    return 'Just now';
+}
+
+// Toggle video play/pause
+function toggleVideoPlay(videoId) {
+    const video = document.getElementById('video-' + videoId);
+    const playBtn = document.getElementById('play-btn-' + videoId);
+    
+    if (video.paused) {
+        video.play();
+        playBtn.classList.add('hidden');
+    } else {
+        video.pause();
+        playBtn.classList.remove('hidden');
+    }
+}
+
+// Toggle video menu
+function toggleVideoMenu(videoId) {
+    const menu = document.getElementById('video-menu-' + videoId);
+    
+    // Close all other menus
+    document.querySelectorAll('[id^="video-menu-"]').forEach(m => {
+        if (m.id !== 'video-menu-' + videoId) {
+            m.classList.add('hidden');
+        }
+    });
+    
+    menu.classList.toggle('hidden');
+}
+
+// Close video menus when clicking outside
+document.addEventListener('click', function(event) {
+    if (!event.target.closest('button[onclick*="toggleVideoMenu"]')) {
+        document.querySelectorAll('[id^="video-menu-"]').forEach(menu => {
+            if (!menu.contains(event.target)) {
+                menu.classList.add('hidden');
+            }
+        });
+    }
+});
+
+// Toggle like/unlike
+let currentVideoId = null;
+
+async function toggleLike(videoId) {
+    try {
+        const likesRef = database.ref('videos/' + videoId + '/likes/' + currentUser.uid);
+        const snapshot = await likesRef.once('value');
+        const hasLiked = snapshot.exists();
+        
+        const likeIcon = document.getElementById('like-icon-' + videoId);
+        const likeCount = document.getElementById('like-count-' + videoId);
+        
+        if (hasLiked) {
+            // Unlike
+            await likesRef.remove();
+            likeIcon.classList.remove('text-red-500');
+            likeIcon.classList.add('text-white');
+        } else {
+            // Like
+            await likesRef.set(true);
+            likeIcon.classList.remove('text-white');
+            likeIcon.classList.add('text-red-500');
+        }
+        
+        // Update count
+        const allLikes = await database.ref('videos/' + videoId + '/likes').once('value');
+        const count = allLikes.exists() ? Object.keys(allLikes.val()).length : 0;
+        likeCount.textContent = count;
+        
+    } catch (error) {
+        console.error('Error toggling like:', error);
+    }
+}
+
+// Increment video view
+async function incrementVideoView(videoId) {
+    try {
+        const videoRef = database.ref('videos/' + videoId);
+        const snapshot = await videoRef.once('value');
+        const video = snapshot.val();
+        
+        const currentViews = video.views || 0;
+        await videoRef.update({
+            views: currentViews + 1
+        });
+    } catch (error) {
+        console.error('Error incrementing view:', error);
+    }
+}
+
+// Open edit video modal
+function openEditVideo(videoId) {
+    currentVideoId = videoId;
+    toggleVideoMenu(videoId);
+    
+    database.ref('videos/' + videoId).once('value', snapshot => {
+        const video = snapshot.val();
+        document.getElementById('editVideoTitle').value = video.title;
+        document.getElementById('editVideoDescription').value = video.description || '';
+        document.getElementById('editVideoModal').classList.remove('hidden');
+    });
+}
+
+// Close edit video modal
+function closeEditVideoModal() {
+    document.getElementById('editVideoModal').classList.add('hidden');
+    currentVideoId = null;
+}
+
+// Save video edit
+async function saveVideoEdit() {
+    if (!currentVideoId) return;
+    
+    const title = document.getElementById('editVideoTitle').value.trim();
+    const description = document.getElementById('editVideoDescription').value.trim();
+    
+    if (!title) {
+        showSuccessModal('Please enter a video title');
+        return;
+    }
+    
+    try {
+        await database.ref('videos/' + currentVideoId).update({
+            title: title,
+            description: description
+        });
+        
+        showSuccessModal('Video updated successfully!');
+        closeEditVideoModal();
+        loadVideosFeed();
+    } catch (error) {
+        console.error('Error updating video:', error);
+        showSuccessModal('Failed to update video: ' + error.message);
+    }
+}
+
+// Open comments modal
+function openComments(videoId) {
+    currentVideoId = videoId;
+    document.getElementById('commentsModal').classList.remove('hidden');
+    loadComments(videoId);
+}
+
+// Close comments modal
+function closeCommentsModal() {
+    document.getElementById('commentsModal').classList.add('hidden');
+    currentVideoId = null;
+}
+
+// Load comments
+function loadComments(videoId) {
+    const commentsList = document.getElementById('commentsList');
+    
+    database.ref('videos/' + videoId + '/comments').on('value', snapshot => {
+        const comments = [];
+        snapshot.forEach(childSnapshot => {
+            comments.push({
+                id: childSnapshot.key,
+                ...childSnapshot.val()
+            });
+        });
+        
+        if (comments.length === 0) {
+            commentsList.innerHTML = '<p class="text-gray-500 text-center py-8">No comments yet. Be the first to comment!</p>';
+            return;
+        }
+        
+        commentsList.innerHTML = '';
+        
+        comments.forEach(comment => {
+            const commentDiv = document.createElement('div');
+            commentDiv.className = 'flex space-x-3 mb-4 group';
+            
+            const deleteBtn = comment.userId === currentUser.uid ? `
+                <button onclick="deleteComment('${videoId}', '${comment.id}')" class="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 transition">
+                    <i class="fas fa-trash text-sm"></i>
+                </button>
+            ` : '';
+            
+            commentDiv.innerHTML = `
+                <img src="${comment.userAvatar}" alt="${comment.userName}" class="w-8 h-8 rounded-full">
+                <div class="flex-1">
+                    <div class="bg-gray-100 rounded-lg px-3 py-2">
+                        <p class="font-semibold text-sm">${comment.userName}</p>
+                        <p class="text-sm text-gray-800">${escapeHtml(comment.text)}</p>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">${formatVideoTime(comment.timestamp)}</p>
+                </div>
+                ${deleteBtn}
+            `;
+            
+            commentsList.appendChild(commentDiv);
+        });
+        
+        // Update comment count in video card
+        const commentCountElement = document.getElementById('comment-count-' + videoId);
+        if (commentCountElement) {
+            commentCountElement.textContent = comments.length;
+        }
+    });
+}
+
+// Add comment
+async function addComment() {
+    if (!currentVideoId) return;
+    
+    const commentInput = document.getElementById('commentInput');
+    const text = commentInput.value.trim();
+    
+    if (!text) return;
+    
+    try {
+        await database.ref('videos/' + currentVideoId + '/comments').push({
+            text: text,
+            userId: currentUser.uid,
+            userName: currentUser.displayName,
+            userAvatar: allUsers[currentUser.uid]?.avatar || currentUser.photoURL,
+            timestamp: firebase.database.ServerValue.TIMESTAMP
+        });
+        
+        commentInput.value = '';
+    } catch (error) {
+        console.error('Error adding comment:', error);
+        showSuccessModal('Failed to add comment: ' + error.message);
+    }
+}
+
+// Delete comment
+async function deleteComment(videoId, commentId) {
+    showConfirmModal(
+        'Delete Comment',
+        'Are you sure you want to delete this comment?',
+        async () => {
+            try {
+                await database.ref('videos/' + videoId + '/comments/' + commentId).remove();
+            } catch (error) {
+                console.error('Error deleting comment:', error);
+                showSuccessModal('Failed to delete comment: ' + error.message);
+            }
+        }
+    );
+}
+
+// Share video
+function shareVideo(videoId) {
+    const shareData = {
+        title: 'Check out this video!',
+        text: 'Watch this amazing video on our app',
+        url: window.location.href
+    };
+    
+    if (navigator.share) {
+        navigator.share(shareData).catch(() => {});
+    } else {
+        // Fallback: copy link
+        navigator.clipboard.writeText(window.location.href);
+        showSuccessModal('Link copied to clipboard!');
+    }
+}
+
+// Delete video
+async function deleteVideo(videoId) {
+    showConfirmModal(
+        'Delete Video',
+        'Are you sure you want to delete this video? This cannot be undone.',
+        async () => {
+            try {
+                await database.ref('videos/' + videoId).remove();
+                showSuccessModal('Video deleted successfully');
+                loadVideosFeed();
+            } catch (error) {
+                console.error('Error deleting video:', error);
+                showSuccessModal('Failed to delete video: ' + error.message);
+            }
+        }
+    );
+}
