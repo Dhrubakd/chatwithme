@@ -740,17 +740,41 @@ async function sendMessage() {
     const messageText = document.getElementById('messageText');
     const text = messageText.value.trim();
 
-    if (text && currentChatId) {
+    if (!text) {
+        console.log('Message is empty');
+        return;
+    }
+
+    if (!currentChatId) {
+        console.error('No chat selected');
+        alert('Please select a chat first');
+        return;
+    }
+
+    if (!currentUser) {
+        console.error('User not authenticated');
+        alert('You must be logged in to send messages');
+        return;
+    }
+
+    try {
         const timestamp = Date.now();
         const chatPath = getChatPath(currentChatId);
         
         const readByObj = {};
         readByObj[currentUser.uid] = true;
         
+        // Get user display name from database if not available
+        let senderName = currentUser.displayName;
+        if (!senderName) {
+            const userSnapshot = await database.ref('users/' + currentUser.uid + '/name').once('value');
+            senderName = userSnapshot.val() || currentUser.email || 'Anonymous';
+        }
+        
         await database.ref(chatPath).push({
             text: text,
             senderId: currentUser.uid,
-            senderName: currentUser.displayName,
+            senderName: senderName,
             timestamp: timestamp,
             readBy: readByObj
         });
@@ -764,6 +788,10 @@ async function sendMessage() {
         });
 
         messageText.value = '';
+        console.log('Message sent successfully');
+    } catch (error) {
+        console.error('Error sending message:', error);
+        alert('Failed to send message: ' + error.message);
     }
 }
 
